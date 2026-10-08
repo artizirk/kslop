@@ -24,13 +24,45 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
+// Hardening knobs. The defaults are safe; the env vars are for tuning.
 const PORT = Number(process.env.PORT || 80);
+const RELOAD_TOKEN = process.env.TOKEN || crypto.randomBytes(4).toString('hex');
+const TLS_KEY = process.env.TLS_KEY || null;
+const TLS_CERT = process.env.TLS_CERT || null;
+const RATE_PER_SEC = 90;      // a client sends ~20 state packets a second
+const RATE_BURST = 180;
+const PER_IP_MAX = 4;         // connections from one address
+const RELOAD_WINDOW_MS = 2000;  // at most one forced reload every two seconds
 const HOST = process.env.HOST || undefined;
 const ROOT = __dirname;
 const MAX_PLAYERS = 16;
 const MAX_MSG = 8 * 1024;          // state packets are ~120 bytes; be strict
 const PING_INTERVAL = 25000;
 const PING_TIMEOUT = 70000;
+
+// Loopback requests are the operator sitting at the machine. They get the
+// console conveniences; the internet does not.
+// The token can be given as a bearer header or a query parameter, whichever
+// is easier from a script.
+function hasToken(req, url) {
+  const auth = req.headers['authorization'] || '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+  const query = url && url.searchParams ? url.searchParams.get('token') : null;
+  return (bearer && timingSafeEqual(bearer, RELOAD_TOKEN)) ||
+         (query && timingSafeEqual(query, RELOAD_TOKEN));
+}
+
+function timingSafeEqual(a, b) {
+  const A = Buffer.from(String(a));
+  const B = Buffer.from(String(b));
+  if (A.length !== B.length) return false;
+  try { return crypto.timingSafeEqual(A, B); } catch (err) { return false; }
+}
+
+function isLoopback(req) {
+  const a = (req.socket && req.socket.remoteAddress) || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' || a === 'localhost';
+}
 
 // ---------------------------------------------------------------- static files
 const TYPES = {
@@ -44,9 +76,23 @@ const TYPES = {
   '.ico': 'image/x-icon',
 };
 
+// Only these reach the network. Everything else in the folder stays private
+// even though it sits in the served directory: the relay source, the tests,
+// dotfiles, notes.
+const SERVE_EXT = new Set(['.html', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.css']);
+const SERVE_NAME = new Set(['index.html']);
+
 function serveStatic(req, res) {
-  const url = new URL(req.url, 'http://localhost');
-  let rel = decodeURIComponent(url.pathname);
+  // A malformed request target must never take the process down. `new URL`
+  // and `decodeURIComponent` both throw on input a client controls.
+  let rel;
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    rel = decodeURIComponent(url.pathname);
+  } catch (err) {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('bad request');
+    return;
+  }
   if (rel === '/' || rel === '') rel = '/index.html';
 
   // keep requests inside the served directory
@@ -56,15 +102,23 @@ function serveStatic(req, res) {
     return;
   }
 
+  const base = path.basename(target);
+  const ext = path.extname(target).toLowerCase();
+  if (base.startsWith('.') || (!SERVE_NAME.has(base.toLowerCase()) && !SERVE_EXT.has(ext))) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
+    return;
+  }
+
   fs.stat(target, (err, st) => {
     if (err || !st.isFile()) {
       res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
       return;
     }
     res.writeHead(200, {
-      'content-type': TYPES[path.extname(target).toLowerCase()] || 'application/octet-stream',
+      'content-type': TYPES[ext] || 'application/octet-stream',
       'content-length': st.size,
       'cache-control': 'no-cache',
+      'x-content-type-options': 'nosniff',
     });
     fs.createReadStream(target).pipe(res);
   });
@@ -82,12 +136,25 @@ class WsConn {
     this.open = true;
     this.closed = false;
     this.lastPong = Date.now();
+    this.fragParts = null;    // partial message being reassembled
+    this.fragOpcode = null;
+    this.fragSize = 0;
+    this.tokens = RATE_BURST; // message budget
+    this.tokenAt = Date.now();
+    this.strikes = 0;
     this.onMessage = null;
     this.onClose = null;
 
     socket.on('data', (chunk) => {
       this.buf = Buffer.concat([this.buf, chunk]);
-      this.drain();
+      // A hostile frame must not be able to take the process down the way a
+      // malformed URL once could.
+      try {
+        this.drain();
+      } catch (err) {
+        console.warn('  ! bad frame from a client: ' + err.message);
+        this.close();
+      }
     });
     socket.on('error', () => this.destroy());
     socket.on('close', () => this.destroy());
@@ -100,17 +167,52 @@ class WsConn {
       if (frame.opcode === 0x8) { this.close(); return; }
       if (frame.opcode === 0x9) { this.sendFrame(0xA, frame.payload); continue; }  // ping -> pong
       if (frame.opcode === 0xA) { this.lastPong = Date.now(); continue; }         // pong
-      if (frame.opcode === 0x1 && this.onMessage) this.onMessage(frame.payload.toString('utf8'));
+
+      // A message can arrive in pieces. Accumulate them until the final frame
+      // rather than dropping the continuation frames on the floor.
+      if (frame.opcode === 0x1) {
+        if (frame.fin) {
+          if (this.onMessage) this.onMessage(frame.payload.toString('utf8'));
+        } else {
+          this.fragOpcode = 0x1;
+          this.fragParts = [frame.payload];
+          this.fragSize = frame.payload.length;
+        }
+        continue;
+      }
+      if (frame.opcode === 0x0) {
+        if (!this.fragParts) { this.close(); return; }   // continuation with nothing to continue
+        this.fragSize += frame.payload.length;
+        if (this.fragSize > MAX_MSG) { this.close(); return; }
+        this.fragParts.push(frame.payload);
+        if (frame.fin) {
+          const whole = Buffer.concat(this.fragParts);
+          const wasOpcode = this.fragOpcode;
+          this.fragParts = null; this.fragOpcode = null; this.fragSize = 0;
+          if (wasOpcode === 0x1 && this.onMessage) this.onMessage(whole.toString('utf8'));
+        }
+        continue;
+      }
+      // binary and anything else we do not speak: ignore it
     }
   }
 
   readFrame() {
     const b = this.buf;
     if (b.length < 2) return null;
+    const fin = (b[0] & 0x80) !== 0;
+    const rsv = b[0] & 0x70;
     const opcode = b[0] & 0x0f;
     const masked = (b[1] & 0x80) !== 0;
     let len = b[1] & 0x7f;
     let off = 2;
+
+    // No extensions are negotiated, so the reserved bits must be clear, and
+    // RFC 6455 requires every client-to-server frame to be masked. A server
+    // that accepts unmasked frames is trusting input it should not.
+    if (rsv !== 0 || !masked) { this.close(); return null; }
+    const isControl = opcode >= 0x8;
+    if (isControl && (!fin || len > 125)) { this.close(); return null; }
     if (len === 126) {
       if (b.length < off + 2) return null;
       len = b.readUInt16BE(off); off += 2;
@@ -121,16 +223,13 @@ class WsConn {
       len = Number(big); off += 8;
     }
     if (len > MAX_MSG) { this.close(); return null; }
-    let mask = null;
-    if (masked) {
-      if (b.length < off + 4) return null;
-      mask = b.subarray(off, off + 4); off += 4;
-    }
+    if (b.length < off + 4) return null;
+    const mask = b.subarray(off, off + 4); off += 4;
     if (b.length < off + len) return null;
     const payload = Buffer.from(b.subarray(off, off + len));
-    if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
+    for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
     this.buf = b.subarray(off + len);
-    return { opcode, payload };
+    return { opcode, payload, fin };
   }
 
   sendFrame(opcode, payload) {
@@ -274,6 +373,8 @@ function broadcast(obj, exceptConn) {
   }
 }
 
+let lastReload = 0;
+
 function reloadAll(reason) {
   BUILD = buildId();
   const n = players.size;
@@ -291,7 +392,11 @@ function dropPlayer(id) {
 
 function handleMessage(conn, msg) {
   if (msg.t === 'hello') {
-    conn.name = String(msg.name || '').slice(0, 16) || ('racer' + conn.id);
+    // Strip anything that could be markup or a control character. The page
+    // escapes names when it renders them, but a name should not need escaping
+    // in the first place.
+    const clean = String(msg.name || '').replace(/[<>&"'`\\]/g, '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+    conn.name = clean.slice(0, 16) || ('racer' + conn.id);
     conn.color = colourForName(conn.name);
     const entry = players.get(conn.id);
     if (entry) { entry.name = conn.name; entry.color = conn.color; }
@@ -324,6 +429,7 @@ function handleMessage(conn, msg) {
   if (msg.t === 'bump') {
     const to = players.get(Number(msg.to));
     if (to && to.conn.open) {
+      to.conn.lastHitBy = conn.id;
       jsonSend(to.conn, {
         t: 'bump',
         from: conn.id,
@@ -360,7 +466,16 @@ function handleMessage(conn, msg) {
   // filled in from the relay's own records so a client cannot spoof them.
   if (msg.t === 'kill') {
     const entry = players.get(conn.id);
-    const byId = Number.isFinite(Number(msg.by)) ? Number(msg.by) : null;
+    // Prefer whoever the relay actually saw hit this player. Bullets and bumps
+    // are reported by the attacker, so the relay has a record; blast and fire
+    // damage is applied on the victim's own client and never passes through
+    // here, so fall back to the name the victim supplies. Each car is simulated
+    // locally, so this is best-effort attribution, not a verified one: a
+    // modified client can still claim a kill that never happened.
+    const claimed = Number(msg.by);
+    const byId = (Number.isFinite(conn.lastHitBy) && conn.lastHitBy !== conn.id)
+      ? conn.lastHitBy
+      : (Number.isFinite(claimed) && claimed !== conn.id && players.has(claimed) ? claimed : null);
     const killer = byId !== null ? players.get(byId) : null;
     // tally it: a wreck credited to someone else is their kill and our death
     let shout = null;
@@ -450,6 +565,7 @@ function handleMessage(conn, msg) {
     if (!to || !to.conn.open) return;
     const dmg = Number(msg.dmg);
     if (!Number.isFinite(dmg) || dmg <= 0) return;
+    to.conn.lastHitBy = conn.id;        // for crediting a kill later
     jsonSend(to.conn, { t: 'hit', from: conn.id, dmg: Math.min(dmg, 0.25) });
     return;
   }
@@ -480,65 +596,164 @@ try {
   console.warn("  (file watching unavailable: " + err.message + ")");
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+function handleRequest(req, res) {
+  try {
+    routeRequest(req, res);
+  } catch (err) {
+    // A request must never be able to take the process down.
+    try {
+      res.writeHead(500, { 'content-type': 'text/plain' }).end('server error');
+    } catch (e) { /* the socket is already gone */ }
+    console.warn('  ! request failed: ' + err.message);
+  }
+}
+
+function routeRequest(req, res) {
+  let url = null;
+  try {
+    url = new URL(req.url, 'http://localhost');
+  } catch (err) {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('bad request');
+    return;
+  }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size, build: BUILD, seed: WORLD_SEED, list: roster() }));
+    // The counts are harmless. Who is playing is only for the operator.
+    const out = { ok: true, players: players.size, build: BUILD, seed: WORLD_SEED };
+    if (isLoopback(req) || hasToken(req, url)) out.list = roster();
+    res.end(JSON.stringify(out));
     return;
   }
 
-  // force every client to reload: curl http://localhost/reload
+  // Force every client to reload. This has real consequences for everyone
+  // playing, so it needs the token printed at startup: an unauthenticated GET
+  // is both a denial-of-service and reachable by any page the operator visits.
   if (url.pathname === '/reload') {
+    if (!hasToken(req, url)) {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'reload needs the token printed at startup' }));
+      return;
+    }
+    const now = Date.now();
+    if (now - lastReload < RELOAD_WINDOW_MS) {
+      res.writeHead(429, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'too many reloads' }));
+      return;
+    }
+    lastReload = now;
     reloadAll('manual request');
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, build: BUILD, players: players.size }));
     return;
   }
   serveStatic(req, res);
-});
+}
+
+// TLS is optional: set TLS_KEY and TLS_CERT to serve https/wss directly.
+// Otherwise put this behind a proxy if the traffic crosses a network you do
+// not trust.
+const server = (TLS_KEY && TLS_CERT)
+  ? require('https').createServer(
+      { key: fs.readFileSync(TLS_KEY), cert: fs.readFileSync(TLS_CERT) },
+      handleRequest)
+  : http.createServer(handleRequest);
+
+// Bound the resources a single peer can pin down. Node already caps header
+// size; these stop a connection that opens and then goes quiet, and cap the
+// total sockets so a flood of half-open connections cannot exhaust the host.
+server.maxConnections = 128;
+server.headersTimeout = 10000;
+server.requestTimeout = 20000;
+server.keepAliveTimeout = 5000;
+
+// Count connections per address so one host cannot take the whole lobby.
+const perIp = new Map();
+function ipOf(req) {
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+function holdIp(ip) { perIp.set(ip, (perIp.get(ip) || 0) + 1); }
+function releaseIp(ip) {
+  const n = (perIp.get(ip) || 0) - 1;
+  if (n <= 0) perIp.delete(ip); else perIp.set(ip, n);
+}
 
 server.on('upgrade', (req, socket) => {
-  const key = req.headers['sec-websocket-key'];
-  if (!key) { socket.destroy(); return; }
+  let ip = null;
+  let held = false;
+  try {
+    const key = req.headers['sec-websocket-key'];
+    if (!key) { socket.destroy(); return; }
 
-  if (players.size >= MAX_PLAYERS) {
-    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
-    socket.destroy();
-    return;
+    if (players.size >= MAX_PLAYERS) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    ip = ipOf(req);
+    if ((perIp.get(ip) || 0) >= PER_IP_MAX) {
+      socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    holdIp(ip);
+    held = true;
+
+    const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\n' +
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
+    );
+    socket.setNoDelay(true);
+
+    const conn = new WsConn(socket);
+    conn.id = nextId++;
+    conn.name = 'racer' + conn.id;
+    conn.color = colourForName(conn.name);
+    players.set(conn.id, { conn, name: conn.name, color: conn.color, joined: Date.now() });
+
+    // tell the newcomer who they are and who is already playing, then announce them
+    jsonSend(conn, { t: 'welcome', id: conn.id, roster: roster(), scores: scoreboard(), build: BUILD, seed: WORLD_SEED });
+    broadcast({ t: 'peer-joined', id: conn.id, roster: roster() }, conn);
+    broadcast({ t: 'scores', scores: scoreboard() }, conn);
+    console.log(`  + player ${conn.id} joined (${players.size} online)`);
+
+    // A token bucket per connection. A client sending state at the intended
+    // 20Hz never notices; one trying to flood the relay runs out and is cut off.
+    conn.onMessage = (text) => {
+      const now = Date.now();
+      conn.tokens = Math.min(RATE_BURST, conn.tokens + (now - conn.tokenAt) / 1000 * RATE_PER_SEC);
+      conn.tokenAt = now;
+      if (conn.tokens < 1) {
+        conn.strikes += 1;
+        if (conn.strikes > 40) {
+          console.warn('  ! player ' + conn.id + ' cut off for flooding');
+          conn.close();
+        }
+        return;
+      }
+      conn.tokens -= 1;
+      conn.strikes = Math.max(0, conn.strikes - 0.02);
+
+      let msg;
+      try { msg = JSON.parse(text); } catch (err) { return; }
+      if (!msg || typeof msg !== 'object') return;
+      handleMessage(conn, msg);
+    };
+    conn.ip = ip;
+    held = false;               // the conn owns the slot now; onClose frees it
+    conn.onClose = () => {
+      releaseIp(conn.ip);
+      dropPlayer(conn.id);
+      console.log(`  - player ${conn.id} left (${players.size} online)`);
+    };
+  } catch (err) {
+    console.warn('  ! upgrade failed: ' + err.message);
+    if (held && ip) releaseIp(ip);
+    try { socket.destroy(); } catch (e) { /* already gone */ }
   }
-
-  const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
-  socket.write(
-    'HTTP/1.1 101 Switching Protocols\r\n' +
-    'Upgrade: websocket\r\n' +
-    'Connection: Upgrade\r\n' +
-    `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
-  );
-  socket.setNoDelay(true);
-
-  const conn = new WsConn(socket);
-  conn.id = nextId++;
-  conn.name = 'racer' + conn.id;
-  conn.color = colourForName(conn.name);
-  players.set(conn.id, { conn, name: conn.name, color: conn.color, joined: Date.now() });
-
-  // tell the newcomer who they are and who is already playing, then announce them
-  jsonSend(conn, { t: 'welcome', id: conn.id, roster: roster(), scores: scoreboard(), build: BUILD, seed: WORLD_SEED });
-  broadcast({ t: 'peer-joined', id: conn.id, roster: roster() }, conn);
-  broadcast({ t: 'scores', scores: scoreboard() }, conn);
-  console.log(`  + player ${conn.id} joined (${players.size} online)`);
-
-  conn.onMessage = (text) => {
-    let msg;
-    try { msg = JSON.parse(text); } catch (err) { return; }
-    if (!msg || typeof msg !== 'object') return;
-    handleMessage(conn, msg);
-  };
-  conn.onClose = () => {
-    dropPlayer(conn.id);
-    console.log(`  - player ${conn.id} left (${players.size} online)`);
-  };
 });
 
 server.on('error', (err) => {
@@ -582,7 +797,9 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  World seed: ${WORLD_SEED} (restart the server for a new city).`);
   console.log('  Everyone who opens that address is in the same game. No codes.');
   console.log('  Editing index.html reloads every open client automatically.');
-  console.log('  Press r + Enter (or GET /reload) to force a refresh.');
+  console.log('  Reload token: ' + RELOAD_TOKEN + '  (needed for /reload; press r here instead)');
+  console.log('  Per connection: ' + RATE_PER_SEC + ' messages/sec, ' + PER_IP_MAX + ' connections per address.');
+  console.log(TLS_KEY ? '  Serving over TLS.' : '  Plain HTTP: put this behind a proxy or set TLS_KEY/TLS_CERT for wss.');
   if (PORT !== 80) console.log('\n  Note: the page auto-connects to whatever port served it, so this is fine.');
   console.log('');
 

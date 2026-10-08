@@ -8,12 +8,12 @@ const WebSocket = require('./ws');
 const wsSend = (ws) => WebSocket.prototype.send.bind(ws);
 const RELAY = Number(process.env.RELAY_PORT || 8099);
 const CDP = 9240;
-const PAGE = `http://127.0.0.1:${RELAY}/?seed=20251008`;
+const PAGE = `http://127.0.0.1:${RELAY}/?seed=20251008&audio=0`;
 const SHOT = path.join(__dirname, 'shots');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const chrome = spawn('/usr/bin/google-chrome-stable', [
-  '--headless=new', `--remote-debugging-port=${CDP}`, '--no-sandbox', '--disable-gpu',
+  '--headless=new', `--remote-debugging-port=${CDP}`, '--no-sandbox', '--disable-gpu', '--mute-audio',
   '--hide-scrollbars', '--window-size=1280,720', ('--user-data-dir=' + path.join(__dirname, 'chrome-profile')),
   '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
   'about:blank',

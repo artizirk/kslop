@@ -21,6 +21,7 @@ const SUITES = [
   'browser.js', 'browser-fx.js', 'browser-items.js', 'browser-destroy.js',
   'browser-nuke.js', 'browser-board.js', 'browser-pads.js', 'browser-spawn.js',
   'browser-peds.js', 'browser-mobilefix.js', 'browser-shop.js',
+  'audit.js',
 ];
 
 const PAGE = path.join(DIR, '..', 'index.html');
@@ -51,6 +52,10 @@ const wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0
 
   extractGame();
   console.log('extracted the game script to ' + GAME);
+
+  // The relay now needs a token for /reload and for the remote roster. Tests
+  // run on loopback, but /reload is token-gated regardless, so hand one out.
+  process.env.TOKEN = process.env.TOKEN || 'test-token';
 
   let server = null;
   const needsServer = wanted.some((s) => s === 'relay.js' || s.startsWith('browser'));

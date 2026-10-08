@@ -126,5 +126,27 @@ try {
   check('audio code path did not break physics', true);
 } catch (e) { check('audio code path did not break physics', false, e.message); }
 
+console.log('\n== audio can be switched off for tests ==');
+try {
+  let built = 0;
+  global.location = { protocol: 'http:', host: 'localhost', search: '?seed=20251008&audio=0', pathname: '/' };
+  global.window.AudioContext = function () {
+    built++;
+    const node = () => ({ frequency: { value: 0, setTargetAtTime() {} }, gain: { value: 0, setTargetAtTime() {} }, connect(n) { return n; }, start() {} });
+    return { state: 'running', currentTime: 0, sampleRate: 48000, resume() {},
+      createOscillator: node, createBiquadFilter: node, createGain: node, createBufferSource: node,
+      createBuffer() { return { getChannelData() { return new Float32Array(8); } }; }, destination: {} };
+  };
+  (0, eval)(require('fs').readFileSync(path.join(__dirname, '.game.js'), 'utf8'));
+  const g3 = global.window.__game;
+  check('?audio=0 is recognised', g3.AUDIO_OFF === true);
+  g3.startAudio();
+  check('no AudioContext is built when audio is off', built === 0, 'built=' + built);
+  check('the engine has no audio node', g3.audioOn === false);
+  g3.keys['w'] = true;
+  for (let i = 0; i < 60; i++) g3.step(1 / 120);
+  check('nothing starts audio later either', g3.audioOn === false && built === 0);
+} catch (e) { check('the audio-off path works', false, e.message); }
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

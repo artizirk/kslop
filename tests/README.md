@@ -20,6 +20,13 @@ layout).
 | input.js | the real keyboard listener path into the physics |
 | render.js | the draw calls never receive NaN, at several sizes and pixel ratios |
 | relay.js | server.js: joining, the roster, relaying state, fire, kills and the scoreboard |
+| audit.js | server.js under attack: malformed URLs, path traversal, framing, floods, connection limits, forged kills, the reload endpoint and TLS |
 | browser*.js | the page in real Chrome: day/night, items, destruction, nukes, streaks, the leaderboard, mobile controls and the shop |
+
+`audit.js` is a security audit, not a game test. Each probe starts a throwaway
+relay on its own port (8300+) and tries to break it, then reports what the server
+survived. It does not use the 8099 relay, so it can run on its own:
+
+    node tests/audit.js
 
 Screenshots from the browser suites land in `tests/shots/`.

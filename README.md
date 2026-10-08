@@ -18,6 +18,8 @@ address on the same network.
 If you only want to drive around on your own, opening `index.html` directly works
 too — you just get no other players.
 
+Add `?audio=0` to the URL for a silent tab — no `AudioContext` is ever built. The
+automated browser tests append it so headless Chrome never plays anything.
 ## Controls
 
 | | |
@@ -94,18 +96,53 @@ everywhere without anyone refreshing.
 
     SEED=123 node server.js     # a fixed city, useful when testing
 
-`GET /reload` forces a refresh, as does pressing `r` + Enter in the server
-console.
+Pressing `r` + Enter in the server console forces a refresh. So does
+`GET /reload`, but that now needs the token the server prints at startup, since
+an unauthenticated reload would let anyone on the network restart everyone's
+game on a loop:
+
+    curl "http://localhost:8080/reload?token=<printed-token>"
+
+### Security
+
+The relay is written to be safe to expose. Each connection gets a message-rate
+budget (90/s sustained) and a blow-up carve-out, one address may hold at most 4
+connections, and the total is capped. Malformed requests and malformed WebSocket
+frames are rejected without touching the process; earlier, a single `GET /%`
+could take the server down. Only `index.html` and image files in the folder are
+served — the relay's source, the tests and dotfiles stay private even though they
+sit in the same directory.
+
+Traffic is plain HTTP by default. Point `TLS_KEY` and `TLS_CERT` at a certificate
+to serve HTTPS/WSS directly, or put the relay behind a proxy:
+
+    TLS_KEY=key.pem TLS_CERT=cert.pem node server.js
+
+Kill attribution is *best-effort*, not verified: each client simulates its own
+car and blast damage is applied on the victim's machine, so a modified client can
+still claim a kill it did not earn. The relay prefers the hit it actually
+forwarded over anything a client claims, but it cannot make a client-authoritative
+game tamper-proof.
+
+`TOKEN` overrides the generated reload token.
 
 ## Tests
 
     node tests/run-all.js
 
-Sixteen suites, roughly 450 assertions. They run the real page: the node suites
-stub the DOM and canvas and exercise the logic, and the browser suites drive real
-Chrome over the DevTools protocol. The runner extracts the script from
-`index.html` and starts a relay on 8099 with a fixed seed. See
-[tests/README.md](tests/README.md) for what each suite covers.
+Sixteen game suites, roughly 450 assertions, plus `tests/audit.js`. They run the
+real page: the node suites stub the DOM and canvas and exercise the logic, and
+the browser suites drive real Chrome over the DevTools protocol. The runner
+extracts the script from `index.html` and starts a relay on 8099 with a fixed
+seed. See [tests/README.md](tests/README.md) for what each suite covers.
+
+`tests/audit.js` is a security audit rather than a game test: each probe starts a
+throwaway relay and attacks it — malformed URLs, path traversal, unmasked and
+fragmented frames, message floods, connection exhaustion, forged kills, a
+cross-origin reload — then reports which of them the server survives. Run it on
+its own to see the findings:
+
+    node tests/audit.js
 
 Screenshots from the browser suites land in `tests/shots/`.
 

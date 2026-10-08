@@ -2229,13 +2229,18 @@ console.log('\n== the Liero cabinet ==');
   car.weapon = 'minigun'; car.ammo = WEAPONS.minigun.ammo;
   car.a = 0; car.vx = car.vy = 0;
   g.bullets.length = 0;
-  // count from the ammo spent: rounds die mid-second, so the live count undercounts
   g.fireCooldown = 0;      // the sniper test left a long cooldown behind
-  const mgBefore = g.currentGun().ammo;
+  // Count spawned rounds directly. Reading the ammo is not reliable: a pickup
+  // during the second moves the active gun, and a round dying mid-flight hides
+  // one, so neither the live count nor the ammo delta on its own says how many
+  // were thrown.
+  const realPush = g.bullets.push.bind(g.bullets);
+  let shots = 0;
+  g.bullets.push = (...a) => { shots += a.length; return realPush(...a); };
   g.firing = true;
   for (let i = 0; i < 120; i++) step(1 / 120);
   g.firing = false;
-  const shots = (mgBefore - g.currentGun().ammo) * WEAPONS.minigun.count;
+  g.bullets.push = realPush;
   check('the minigun fires steadily', WEAPONS.minigun.interval <= 0.1, 'interval=' + WEAPONS.minigun.interval);
   check('it throws a steady stream of rounds', shots > 8 && shots < 40, 'rounds in a second=' + shots);
   g.bullets.length = 0;

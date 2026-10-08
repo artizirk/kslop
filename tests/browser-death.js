@@ -8,7 +8,7 @@ const RELAY = Number(process.env.RELAY_PORT || 8099);
 const CDP = 9243;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const chrome = spawn('/usr/bin/google-chrome-stable', [
-  '--headless=new', `--remote-debugging-port=${CDP}`, '--no-sandbox', '--disable-gpu',
+  '--headless=new', `--remote-debugging-port=${CDP}`, '--no-sandbox', '--disable-gpu', '--mute-audio',
   '--hide-scrollbars', '--window-size=900,420', ('--user-data-dir=' + path.join(__dirname, 'chrome-profile')),
   '--disable-background-timer-throttling', '--disable-renderer-backgrounding', 'about:blank',
 ], { stdio: 'ignore' });
@@ -30,7 +30,7 @@ const getJSON = (p) => new Promise((res, rej) => {
   await send('Runtime.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:900,height:420,deviceScaleFactor:2,mobile:true});
   await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-  await send('Page.navigate',{url:`http://127.0.0.1:${RELAY}/?seed=20251008`});
+  await send('Page.navigate',{url:`http://127.0.0.1:${RELAY}/?seed=20251008&audio=0`});
   await sleep(1900);
   await js(`(() => { const g = window.__game; g.car.wreckTimer = g.WRECK_TIME - 1.0; g.car.lastHitBy = 42; return true; })()`);
   await sleep(150);

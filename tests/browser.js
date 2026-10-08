@@ -6,7 +6,7 @@ const path = require('path');
 const http = require('http');
 
 const PORT = 9222;
-const PAGE = 'file://' + path.join(__dirname, '..', 'index.html') + '?seed=20251008';
+const PAGE = 'file://' + path.join(__dirname, '..', 'index.html') + '?seed=20251008&audio=0';
 const SHOT_DIR = path.join(__dirname, 'shots');
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
@@ -14,7 +14,7 @@ const chrome = spawn('/usr/bin/google-chrome-stable', [
   '--headless=new',
   `--remote-debugging-port=${PORT}`,
   '--no-sandbox',
-  '--disable-gpu',
+  '--disable-gpu', '--mute-audio',
   '--hide-scrollbars',
   '--window-size=1280,720',
   ('--user-data-dir=' + path.join(__dirname, 'chrome-profile')),
@@ -154,6 +154,9 @@ const WebSocket = require('./ws');
 
   const audio = await evalJs(`(() => { try { const AC = window.AudioContext||window.webkitAudioContext; return AC ? 'available' : 'none'; } catch(e){ return 'err'; } })()`);
   check('WebAudio context constructible', audio === 'available', audio);
+
+  const audioOff = await evalJs('({ off: __game.AUDIO_OFF, on: __game.audioOn })');
+  check('audio is disabled for the test run (?audio=0)', audioOff.off === true && audioOff.on === false, JSON.stringify(audioOff));
 
   await key('keyDown', 'a', 'KeyA', 65);
   await sleep(700);

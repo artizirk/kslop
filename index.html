@@ -345,6 +345,18 @@ const rng = mulberry32(WORLD_SEED);
 const rand = (a, b) => a + rng() * (b - a);
 const pick = (arr) => arr[(rng() * arr.length) | 0];
 
+// Sound is on for players. Add ?audio=0 for a silent tab — the automated tests
+// do, so headless Chrome never builds an AudioContext.
+const AUDIO_OFF = (() => {
+  try {
+    if (typeof location !== 'undefined' && location.search) {
+      const q = new URLSearchParams(location.search).get('audio');
+      return q === '0' || q === 'off' || q === 'false';
+    }
+  } catch (err) { /* leave sound on */ }
+  return false;
+})();
+
 function hexToRgb(h) {
   const n = parseInt(h.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -601,7 +613,7 @@ function handleRelay(m) {
     if (Number.isFinite(m.seed) && (m.seed >>> 0) !== WORLD_SEED) {
       if (!reloading) {
         reloading = true;
-        const url = location.pathname + '?seed=' + (m.seed >>> 0);
+        const url = location.pathname + '?seed=' + (m.seed >>> 0) + (AUDIO_OFF ? '&audio=0' : '');
         location.replace(url);
       }
       return;
@@ -2198,6 +2210,7 @@ const handbrake = () => !!keys[' '];
 let audio = null, osc = null, oscGain = null;
 
 function startAudio() {
+  if (AUDIO_OFF) return;
   if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
@@ -4794,6 +4807,7 @@ window.__game = {
   get nukeFlash() { return nukeFlash; },
   set nukeFlash(v) { nukeFlash = v; },
   loadProfile, saveProfile, colourForName, hslToHex, WORLD_SEED,
+  AUDIO_OFF, startAudio, get audioOn() { return audio !== null; },
   toggleFullscreen, fullscreenSupported, fullscreenActive,
   UPGRADES, upgradeCost, buyUpgrade, renderShop, toggleShop, saveProgress, loadProgress, MAX_LEVEL,
   topSpeedNow, accelNow, gripNow, boostTimeNow, gunDamageNow, damageScaleNow,
