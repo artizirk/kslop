@@ -1,0 +1,4816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>LEONIDA — topdown</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05070d; }
+  body { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8eef7;
+         -webkit-user-select: none; user-select: none; }
+  @media (max-width: 900px) { #help { font-size: 10px; padding: 4px 8px; } }
+  canvas { display: block; }
+  #help {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 10px;
+    color: #a9b7c9; pointer-events: none; z-index: 2;
+    background: rgba(8,11,18,0.66); padding: 5px 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.13); white-space: nowrap;
+  }
+  #help b { color: #dfe8f4; font-weight: 600; }
+
+  /* ---- multiplayer panel ---- */
+  #net {
+    position: fixed; top: 12px; right: 12px; z-index: 10;
+    width: 336px; max-width: calc(100vw - 24px);
+    background: rgba(8,11,18,0.94); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.55); backdrop-filter: blur(6px);
+    max-height: calc(100vh - 24px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  #net.hidden { display: none; }
+  #net h3 { font-size: 12px; letter-spacing: 0.10em; text-transform: uppercase;
+            color: #8fa0b5; margin: 0 0 8px; font-weight: 600;
+            display: flex; align-items: center; justify-content: space-between; }
+  /* A close button big enough for a thumb: the keyboard shortcut is no use
+     on a phone, and the panel covers the button that opened it. */
+  #net button.close {
+    flex: none; width: 40px; height: 34px; padding: 0; font-size: 15px; line-height: 1;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 4px; color: #dfe8f4;
+  }
+  #net button.close:hover { background: rgba(255,255,255,0.16); }
+  #net .row { display: flex; gap: 6px; margin-bottom: 8px; }
+  #net button {
+    flex: 1; font: inherit; font-size: 11px; padding: 7px 8px; cursor: pointer;
+    background: #1b2333; color: #e8eef7; border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 4px;
+  }
+  #net button:hover:not(:disabled) { background: #26314a; border-color: rgba(255,255,255,0.3); }
+  #net button:disabled { opacity: 0.4; cursor: default; }
+  #net button.primary { background: #2f6f4f; border-color: #3f9a6c; }
+  #net button.primary:hover:not(:disabled) { background: #38835e; }
+  #net label { display: block; font-size: 10px; color: #8fa0b5; margin: 8px 0 3px;
+               letter-spacing: 0.06em; text-transform: uppercase; }
+  #net textarea {
+    width: 100%; box-sizing: border-box; font: 10px/1.35 ui-monospace, Menlo, monospace;
+    background: #0c1119; color: #b9c8dc; border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 4px; padding: 6px; resize: vertical; min-height: 58px; word-break: break-all;
+  }
+  #net textarea:focus { outline: none; border-color: #3f9a6c; }
+  #net .status { font-size: 11px; padding: 6px 8px; border-radius: 4px; margin-top: 8px; }
+  #net .status.idle { background: rgba(255,255,255,0.06); color: #8fa0b5; }
+  #net .status.wait { background: rgba(255,176,32,0.14); color: #ffb020; }
+  #net .status.live { background: rgba(75,208,122,0.14); color: #4bd07a; }
+  #net .status.err  { background: rgba(255,75,62,0.14);  color: #ff6b5e; }
+  #net .hint { font-size: 10px; color: #6f8098; margin-top: 8px; line-height: 1.45; }
+  #net .board { font-size: 11px; margin: 6px 0 2px; }
+  #net .lbhead, #net .lbrow { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+  #net .lbhead { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+                 color: #6f8098; border-bottom: 1px solid rgba(255,255,255,0.10); padding-bottom: 4px; }
+  #net .lbrow { border-bottom: 1px solid rgba(255,255,255,0.05); }
+  #net .lbrow.me { color: #dfe8f4; font-weight: 600; }
+  #net .rank { width: 12px; color: #6f8098; flex: none; }
+  #net .lbname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #net .kills { width: 22px; text-align: right; color: #4bd07a; flex: none; }
+  #net .deaths { width: 20px; text-align: right; color: #8fa0b5; flex: none; }
+  #net .streak { width: 30px; text-align: right; color: #ffd23f; flex: none; font-size: 10px; }
+  #net .peers { margin-top: 8px; font-size: 11px; }
+  #net .peers div { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  #net .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  #net .hpbar {
+    flex: none; width: 46px; height: 7px; border-radius: 4px;
+    background: rgba(255,255,255,0.24); overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.35);
+  }
+  #net .hpbar i { display: block; height: 100%; background: #4bd07a; }
+  #net .hpbar.mid i { background: #ffb020; }
+  #net .hpbar.low i { background: #ff4b3e; }
+  #net input.name {
+    width: 100%; font: inherit; font-size: 16px; padding: 9px 10px; box-sizing: border-box;
+    background: #0c1119; color: #e8eef7; border: 1px solid rgba(255,255,255,0.13); border-radius: 4px;
+  }
+  @media (max-width: 720px) { #net { width: calc(100vw - 24px); } }
+
+  /* ---- shop ---- */
+  #shop {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 12;
+    width: 380px; max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: rgba(8,11,18,0.95); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+  }
+  #shop.hidden { display: none; }
+  #shop h3 { font-size: 12px; letter-spacing: 0.10em; text-transform: uppercase;
+             color: #8fa0b5; margin: 0 0 10px; font-weight: 600;
+             display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #shop .purse { color: #4bd07a; font-size: 14px; margin-left: auto; }
+  #shop button.close {
+    flex: none; width: 40px; height: 34px; padding: 0; font-size: 15px; line-height: 1;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 4px; color: #dfe8f4;
+  }
+  #shop .urow { display: flex; align-items: center; gap: 8px; padding: 7px 0;
+                border-bottom: 1px solid rgba(255,255,255,0.06); }
+  #shop .urow .uinfo { flex: 1; min-width: 0; }
+  #shop .urow .uname { font-weight: 600; color: #e8eef7; }
+  #shop .urow .ublurb { font-size: 10px; color: #7f8ea6; }
+  #shop .ulvl { font-size: 10px; color: #4bd07a; font-weight: 600; letter-spacing: 0.06em; }
+  #shop .pips { display: flex; gap: 3px; margin-top: 3px; }
+  #shop .pip { width: 12px; height: 5px; border-radius: 2px; background: rgba(255,255,255,0.16); }
+  #shop .pip.on { background: #4bd07a; }
+  #shop .urow button { flex: none; width: 78px; font-size: 11px; padding: 8px 4px; }
+  #shop .uinfo.dim { opacity: 0.55; }
+
+  /* ---- touch controls ----
+     Two clusters, one per thumb. Steering and the handbrake on the left,
+     throttle/brake plus fire on the right, so neither thumb has to travel. */
+  #touch {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 0 max(16px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-bottom))
+             max(16px, env(safe-area-inset-right));
+  }
+  #touch[hidden] { display: none; }
+  /* keep the thumb clusters clear of the utility column down the right edge */
+  body.touch #touch { padding-right: 92px; }
+  @media (max-width: 560px) {
+    body.touch #touch { padding-right: 16px; }
+    #touch .tbtn.menu, #touch .tbtn.shop, #touch .tbtn.fs, #touch .tbtn.reset {
+      width: 48px; height: 48px; font-size: 16px;
+    }
+    #touch .tbtn.shop { top: 66px; }
+    #touch .tbtn.fs { top: 120px; }
+    #touch .tbtn.reset { top: 174px; }
+  }
+  #touch .pad { display: flex; gap: 14px; align-items: flex-end; pointer-events: none; }
+  #touch .stack { display: flex; flex-direction: column; gap: 12px; }
+  #touch .tbtn {
+    pointer-events: auto; -webkit-tap-highlight-color: transparent; touch-action: none;
+    width: 76px; height: 76px; border-radius: 50%;
+    font: 600 19px/1 ui-monospace, monospace;
+    color: #e8eef7; background: rgba(18,24,36,0.6);
+    border: 1.5px solid rgba(255,255,255,0.22);
+    backdrop-filter: blur(4px); user-select: none; cursor: pointer;
+  }
+  #touch .tbtn.go { background: rgba(47,111,79,0.66); height: 96px; }
+  #touch .tbtn.wide {
+    width: 92px; height: 62px; border-radius: 31px; font-size: 12px;
+    background: rgba(120,80,20,0.6); align-self: flex-end;
+  }
+  /* Small and out of the way, pinned top-right: the way to reach the name
+     field and the leaderboard on a phone. */
+  /* The utility column, stacked down the top-right: players/name, fullscreen,
+     and reset. Reset is here so a layout that got dragged out of shape can
+     always be put back without opening anything.
+     The offsets are fixed numbers rather than env(safe-area-inset-top): that
+     value changes when fullscreen hides the browser chrome, which made the
+     whole column jump as you entered or left it. */
+  #touch .tbtn.shop {
+    position: absolute; top: 80px; right: 12px;
+    width: 60px; height: 60px; font-size: 22px; border-radius: 50%;
+    background: rgba(30,70,45,0.7); border-color: rgba(120,220,150,0.4); z-index: 11;
+    color: #d9f0d9;
+  }
+  #touch .tbtn.fs {
+    position: absolute; top: 148px; right: 12px;   /* fixed: env() shifts on fullscreen */
+    width: 60px; height: 60px; font-size: 20px; border-radius: 50%;
+    background: rgba(18,24,36,0.62); z-index: 11;
+  }
+  #touch .tbtn.reset {
+    position: absolute; top: 216px; right: 12px;
+    width: 60px; height: 60px; font-size: 20px; border-radius: 50%;
+    background: rgba(18,24,36,0.62); z-index: 11;
+  }
+  #touch .tbtn.menu {
+    position: absolute; top: 12px; right: 12px;
+    width: 60px; height: 60px; font-size: 20px; border-radius: 50%; z-index: 11;
+    background: rgba(18,24,36,0.62);
+  }
+  #touch .tbtn.swap {
+    width: 66px; height: 66px; font-size: 11px;
+    background: rgba(70,60,120,0.6); border-color: rgba(180,150,255,0.4);
+    align-self: flex-end; margin-bottom: 34px;
+  }
+  #touch .tbtn.use {
+    width: 74px; height: 74px; font-size: 12px;
+    background: rgba(40,90,140,0.62); border-color: rgba(120,200,255,0.4);
+    align-self: flex-end; margin-bottom: 30px;
+  }
+  #touch .tbtn.fire {
+    width: 92px; height: 92px; font-size: 13px;
+    background: rgba(150,40,40,0.62); border-color: rgba(255,120,110,0.42);
+    align-self: flex-end; margin-bottom: 4px;
+  }
+  /* Offsets ride on custom properties so a moved button keeps its scale and
+     the drag transform composes with the pressed state. */
+  #touch .tbtn { transform: translate(var(--dx, 0px), var(--dy, 0px)); }
+  #touch .tbtn.held { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(0.94); filter: brightness(1.5); }
+  #touch .tbtn.moving {
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.06);
+    border-color: #ffe9a8; box-shadow: 0 0 0 3px rgba(255,214,120,0.35);
+    filter: none; z-index: 6;
+  }
+  @media (max-height: 420px) {
+    #touch .tbtn { width: 64px; height: 64px; font-size: 17px; }
+    #touch .tbtn.go { height: 80px; }
+    #touch .tbtn.wide { width: 84px; height: 60px; }
+    #touch .tbtn.fire { width: 78px; height: 78px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="help">
+  <b>WASD</b>/<b>arrows</b> drive &nbsp;·&nbsp; <b>space</b> handbrake &nbsp;·&nbsp; <b>R</b> respawn &nbsp;·&nbsp; <b>click</b>/<b>J</b> fire &nbsp;·&nbsp; <b>E</b> use item &nbsp;·&nbsp; <b>Q</b> swap gun &nbsp;·&nbsp; <b>B</b> shop &nbsp;·&nbsp; <b>F</b> fps &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>P</b> players
+</div>
+<div id="net" class="hidden">
+  <h3>Players &middot; same game
+    <button id="netClose" class="close" aria-label="close">✕</button>
+  </h3>
+  <input class="name" id="netName" maxlength="14" placeholder="your name" autocomplete="off">
+  <div id="netStatus" class="status idle">Connecting…</div>
+  <div class="lbhead"><span class="rank">#</span><span></span>
+    <span class="lbname">player</span><span class="kills">K</span><span class="streak">S</span><span class="deaths">D</span></div>
+  <div class="board" id="netBoard"></div>
+  <div class="peers" id="netPeers"></div>
+  <div class="hint" id="netHint">Everyone who opens this page shares one game.</div>
+  <div class="row" style="margin-top:8px">
+    <button id="netRetry">Reconnect</button>
+    <button id="netResetPads" hidden>Reset controls</button>
+  </div>
+</div>
+
+<div id="shop" class="hidden">
+  <h3>Shop <span class="purse" id="shopMoney">$0</span>
+    <button id="shopClose" class="close" aria-label="close">✕</button>
+  </h3>
+  <div id="shopList"></div>
+  <div class="hint">Earn money by taking people out. Upgrades are yours to keep.</div>
+  <div class="row" style="margin-top:8px">
+    <button id="shopReset">Reset progress</button>
+  </div>
+</div>
+
+<!-- ---- touch controls: shown only on coarse pointers ---- -->
+<div id="touch" hidden>
+  <div class="pad left">
+    <button class="tbtn" data-id="left" data-key="a" aria-label="steer left">◀</button>
+    <button class="tbtn" data-id="right" data-key="d" aria-label="steer right">▶</button>
+    <button class="tbtn wide" data-id="drift" data-key=" " aria-label="handbrake">DRIFT</button>
+  </div>
+  <button class="tbtn menu" data-id="menu" data-menu="1" aria-label="players and name">☰</button>
+  <button class="tbtn shop" data-id="shop" data-shop="1" aria-label="shop">$</button>
+  <button class="tbtn fs" data-id="fs" data-fs="1" aria-label="fullscreen">⛶</button>
+  <button class="tbtn reset" data-id="reset" data-reset="1" aria-label="reset controls">⟲</button>
+  <div class="pad right">
+    <button class="tbtn swap" data-id="swap" data-swap="1" aria-label="swap gun">SWAP</button>
+    <button class="tbtn use" data-id="use" data-use="1" aria-label="use item">USE</button>
+    <button class="tbtn fire" data-id="fire" data-fire="1" aria-label="fire">FIRE</button>
+    <div class="stack">
+      <button class="tbtn go" data-id="gas" data-key="w" aria-label="accelerate">▲</button>
+      <button class="tbtn" data-id="brake" data-key="s" aria-label="brake and reverse">▼</button>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+
+// =====================================================================
+// setup
+// =====================================================================
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d', { alpha: false, desynchronized: true });
+let W = 0, H = 0, DPR = 1;
+
+// Budget the backing store rather than blindly using devicePixelRatio. A 4K
+// display at dpr 2 wants an 8.3 megapixel canvas; every frame then has to
+// rasterise 4x the pixels of a 1080p one for no visible gain at this art
+// scale. Measured: our draw code is ~1.2ms/frame at 720p, so the cost is
+// fill rate, not JavaScript.
+const PIXEL_BUDGET = 2.6e6;   // ~1920x1350, comfortably above a 1440p desktop
+
+function resize() {
+  W = window.innerWidth || 1280;
+  H = window.innerHeight || 720;
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const area = W * H * dpr * dpr;
+  if (area > PIXEL_BUDGET) dpr = Math.sqrt(PIXEL_BUDGET / (W * H));
+  DPR = Math.max(1, dpr);     // never go below 1: text and thin lines need it
+
+  cvs.width = Math.round(W * DPR);
+  cvs.height = Math.round(H * DPR);
+  cvs.style.width = W + 'px';
+  cvs.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// =====================================================================
+// small helpers
+// =====================================================================
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (t) => t * t * (3 - 2 * t);
+const mod = (a, n) => ((a % n) + n) % n;
+
+// deterministic RNG so the city looks identical every load
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// The city is built from a seed. A lone player gets a brand new one every
+// load; when connected, the relay hands out the seed it is using so every
+// player is driving around the same streets. A player who arrives with the
+// wrong seed reloads once with the right one (see the welcome handler).
+const WORLD_SEED = (() => {
+  try {
+    if (typeof location !== 'undefined' && location.search) {
+      const q = new URLSearchParams(location.search).get('seed');
+      if (q !== null && Number.isFinite(Number(q))) return (Number(q) >>> 0);
+    }
+  } catch (err) { /* fall through to a fresh seed */ }
+  return (Math.random() * 0x7fffffff) >>> 0;
+})();
+const rng = mulberry32(WORLD_SEED);
+const rand = (a, b) => a + rng() * (b - a);
+const pick = (arr) => arr[(rng() * arr.length) | 0];
+
+function hexToRgb(h) {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+// accepts '#rrggbb' or 'rgb(r,g,b)' so interpolated colours can be fed back in
+function parseColor(c) {
+  if (c.charCodeAt(0) === 35) return hexToRgb(c);
+  const m = c.match(/-?\d+(\.\d+)?/g);
+  return [+m[0], +m[1], +m[2]];
+}
+// A stable colour per nickname, so everyone is visibly different and a name
+// always looks the same to everybody. FNV-1a over the lowercased name picks
+// the hue; the lightness is nudged by a second hash so names that land on
+// similar hues still separate.
+function colourForName(name) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return '#c8453a';
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  let h2 = h;
+  h2 ^= h2 >>> 13; h2 = Math.imul(h2, 2246822519) >>> 0; h2 ^= h2 >>> 15;
+
+  const hue = h % 360;
+  const sat = 58 + (h2 % 22);            // 58-79%
+  const light = 45 + ((h2 >>> 8) % 16);  // 45-60%
+  return hslToHex(hue / 360, sat / 100, light / 100);
+}
+
+function hslToHex(h, s, l) {
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * v).toString(16).padStart(2, '0');
+  };
+  return '#' + f(0) + f(8) + f(4);
+}
+
+const mixColor = (a, b, t) => {
+  const A = parseColor(a), B = parseColor(b);
+  return `rgb(${Math.round(lerp(A[0], B[0], t))},${Math.round(lerp(A[1], B[1], t))},${Math.round(lerp(A[2], B[2], t))})`;
+};
+const rgba = (hex, a) => {
+  const c = hexToRgb(hex);
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+};
+
+// pre-rendered radial glow sprites: far cheaper than a gradient per light
+const glowCache = new Map();
+function glowSprite(hex) {
+  if (glowCache.has(hex)) return glowCache.get(hex);
+  const size = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const r = size / 2;
+  const g = c.createRadialGradient(r, r, 0, r, r, r);
+  g.addColorStop(0, rgba(hex, 0.95));
+  g.addColorStop(0.35, rgba(hex, 0.30));
+  g.addColorStop(1, rgba(hex, 0));
+  c.fillStyle = g;
+  c.fillRect(0, 0, size, size);
+  glowCache.set(hex, cv);
+  return cv;
+}
+
+// =====================================================================
+// world metrics
+// =====================================================================
+const ROAD = 160;              // wide enough to drift a full lane
+const BLOCK = 220;
+const STEP = ROAD + BLOCK;
+const N = 6;
+const WORLD = N * STEP + ROAD;
+const WALL = 40;
+const BEACH = 90;              // sand ring outside the barrier
+const SEA = 2600;              // ocean drawn out to here
+
+// =====================================================================
+// multiplayer
+//
+// One WebSocket to the server, which relays everyone's car to everyone else.
+// No peer-to-peer, no signalling, no STUN: open the page and you are in the
+// same game as everybody else on that server.
+//
+// Each player simulates their own car and broadcasts it, so remote cars are
+// never rubber-banded -- what you see is what they actually did. The only
+// thing reconciled is contact: the impact is routed to the other player so
+// both cars agree about who got hit and how hard.
+// =====================================================================
+// The build our own page was served with, learned from the first welcome.
+let myBuild = null;
+let reloading = false;
+
+const NET = {
+  ws: null,
+  id: null,                  // our id from the server
+  peers: new Map(),          // id -> remote car state
+  roster: [],                // [{ id, name, color }]
+  scores: [],                // [{ id, name, color, kills, deaths }]
+  name: '',
+  color: '#c8453a',          // replaced from the name once it is known
+  online: false,             // websocket is open
+  lastSend: 0,
+  retry: 0,
+  retryTimer: null,
+  lastSent: [],              // a short ring of outgoing messages, for debugging
+};
+
+// Recent wrecks, newest first. Each entry fades out on its own.
+// Streak shouts: a centre-screen banner whenever a run crosses a threshold.
+const streakBanners = [];
+const STREAK_NAMES = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 4: 'RAMPAGE', 5: 'DOMINATING', 6: 'UNSTOPPABLE', 8: 'LEGENDARY' };
+
+const killFeed = [];
+const KILL_FEED_LIFE = 7;   // seconds each line stays up
+const KILL_FEED_MAX = 5;
+
+const NET_TICK = 1 / 20;     // 20 updates a second is plenty for cars
+const NET_TIMEOUT = 6;       // seconds of silence before dropping a peer
+
+// localStorage can throw (private mode, disabled cookies), so every access
+// is wrapped: a blocked store must not stop the game booting.
+const STORE_KEY = 'leonida.player';
+const PROGRESS_KEY = 'leonida.progress';
+
+// Money and upgrade levels, kept between visits.
+function saveProgress() {
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+      money: car.money, upgrades: car.upgrades,
+    }));
+  } catch (err) { /* not fatal */ }
+}
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return;
+    if (Number.isFinite(p.money) && p.money >= 0) car.money = Math.floor(p.money);
+    if (p.upgrades && typeof p.upgrades === 'object') {
+      if (!car.upgrades) car.upgrades = { engine: 0, armour: 0, nitro: 0, tyres: 0, guns: 0 };
+      for (const k of Object.keys(UPGRADES)) {
+        const v = p.upgrades[k];
+        if (Number.isFinite(v)) car.upgrades[k] = clamp(Math.floor(v), 0, MAX_LEVEL);
+      }
+    }
+  } catch (err) { /* start fresh */ }
+}
+
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return null;
+    return {
+      name: typeof p.name === 'string' ? p.name.slice(0, 16) : null,
+      color: /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : null,
+    };
+  } catch (err) { return null; }
+}
+
+function saveProfile() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ name: NET.name, color: NET.color }));
+  } catch (err) { /* storage unavailable: the name just will not persist */ }
+}
+
+function relayUrl() {
+  const loc = typeof location !== 'undefined' ? location : null;
+  if (!loc || (loc.protocol !== 'http:' && loc.protocol !== 'https:')) return null;
+  const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${loc.host}/`;
+}
+
+function setNetStatus(kind, text) {
+  if (!els.status) return;
+  els.status.className = 'status ' + kind;
+  els.status.textContent = text;
+}
+
+function connectRelay() {
+  const url = relayUrl();
+  if (!url) {
+    setNetStatus('err', 'Open this page through the server to play with others.');
+    return;
+  }
+  if (NET.ws && (NET.ws.readyState === 0 || NET.ws.readyState === 1)) return;
+  clearTimeout(NET.retryTimer);
+
+  let ws;
+  try { ws = new WebSocket(url); } catch (err) { scheduleRetry('Could not reach the server.'); return; }
+  NET.ws = ws;
+
+  ws.onopen = () => {
+    NET.online = true;
+    NET.retry = 0;
+    sendHello();
+    setNetStatus('wait', 'Connected. Looking for players…');
+  };
+  ws.onmessage = (e) => {
+    let m;
+    try { m = JSON.parse(e.data); } catch (err) { return; }
+    handleRelay(m);
+  };
+  ws.onclose = () => {
+    NET.online = false;
+    NET.ws = null;
+    NET.peers.clear();
+    renderPeers();
+    scheduleRetry('Disconnected from the server.');
+  };
+  ws.onerror = () => { /* onclose always follows */ };
+}
+
+function scheduleRetry(reason) {
+  if (relayUrl() === null) return;                 // nothing to retry against
+  NET.retry = Math.min(NET.retry + 1, 6);
+  const wait = NET.retry * 1000;
+  setNetStatus('err', `${reason} Retrying in ${NET.retry}s…`);
+  clearTimeout(NET.retryTimer);
+  NET.retryTimer = setTimeout(connectRelay, wait);
+}
+
+function sendHello() {
+  if (!NET.ws || NET.ws.readyState !== 1) return;
+  NET.ws.send(JSON.stringify({ t: 'hello', name: NET.name, color: NET.color }));
+}
+
+function send(obj) {
+  if (NET.ws && NET.ws.readyState === 1) {
+    try { NET.ws.send(JSON.stringify(obj)); } catch (err) { /* closing */ }
+  }
+  // a small ring of what we last sent, for debugging and tests
+  NET.lastSent.push(obj);
+  if (NET.lastSent.length > 20) NET.lastSent.shift();
+}
+
+function handleRelay(m) {
+  if (!m || typeof m !== 'object') return;
+
+  if (m.t === 'welcome') {
+    NET.id = m.id;
+    NET.roster = Array.isArray(m.roster) ? m.roster : [];
+      NET.scores = Array.isArray(m.scores) ? m.scores : NET.scores;
+    // Everyone must build the same city. If the relay is running a different
+    // seed to the one we generated, adopt theirs and restart once.
+    if (Number.isFinite(m.seed) && (m.seed >>> 0) !== WORLD_SEED) {
+      if (!reloading) {
+        reloading = true;
+        const url = location.pathname + '?seed=' + (m.seed >>> 0);
+        location.replace(url);
+      }
+      return;
+    }
+    // If the page we loaded is older than what the server is serving, our
+    // own code cannot talk to it properly. Reload once, quietly.
+    if (m.build && myBuild === null) myBuild = m.build;
+    else if (m.build && myBuild !== m.build && !reloading) {
+      reloading = true;
+      location.reload();
+      return;
+    }
+    for (const r of NET.roster) {
+      if (r.id === NET.id) continue;
+      if (!NET.peers.has(r.id)) adoptPeer(r.id, r.name, r.color, car.x, car.y);
+    }
+    renderPeers();
+    updateLobbyStatus();
+    return;
+  }
+
+  if (m.t === 'peer-joined') {
+    NET.roster = Array.isArray(m.roster) ? m.roster : NET.roster;
+    renderPeers();
+    updateLobbyStatus();
+    return;
+  }
+
+  if (m.t === 'peer-left') {
+    NET.peers.delete(m.id);
+    NET.roster = NET.roster.filter((p) => p.id !== m.id);
+    renderPeers();
+    updateLobbyStatus();
+    return;
+  }
+
+  if (m.t === 'reload') {
+    // the page on the server changed; pick up the new build
+    if (!reloading) { reloading = true; location.reload(); }
+    return;
+  }
+
+  if (m.t === 'streak') {
+    pushStreak(m);
+    return;
+  }
+
+  if (m.t === 'scores') {
+    NET.scores = Array.isArray(m.scores) ? m.scores : [];
+    renderPeers();
+    return;
+  }
+
+  if (m.t === 'roster') {
+    NET.roster = Array.isArray(m.roster) ? m.roster : [];
+    for (const r of NET.roster) {
+      if (r.id === NET.id) continue;
+      const p = NET.peers.get(r.id);
+      if (p) { p.name = r.name || p.name; p.color = r.color || p.color; }
+    }
+    renderPeers();
+    return;
+  }
+
+  if (m.t === 'state') {
+    // the server stamps `from`, so a peer cannot claim to be someone else
+    onRemoteState(m.from, m);
+    return;
+  }
+
+  if (m.t === 'fire') {
+    // Remote gunfire: cosmetic bullets only. The shooter decides hits, so
+    // these render and fly but never damage anything here.
+    if (typeof m.x !== 'number' || typeof m.y !== 'number' || typeof m.a !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.a)) return;
+    if (bullets.length > 160) return;                 // do not let a peer flood us
+    const w = WEAPONS[m.w] || WEAPONS.gun;
+    const c = Math.cos(m.a), sn = Math.sin(m.a);
+    const fvx = typeof m.vx === 'number' && Number.isFinite(m.vx) ? m.vx : 0;
+    const fvy = typeof m.vy === 'number' && Number.isFinite(m.vy) ? m.vy : 0;
+    for (let i = 0; i < w.count; i++) {
+      // mirror the shooter's spread so a remote shotgun looks like one
+      const offset = w.count === 1 ? 0 : (i / (w.count - 1) - 0.5) * 2;
+      const ang = m.a + offset * w.spread;
+      const ca = Math.cos(ang), sa2 = Math.sin(ang);
+      const side = w.count === 2 ? (i === 0 ? -6 : 6) : 0;
+      const mx = m.x + c * (CAR_HALF_L + 4) - sn * side;
+      const my = m.y + sn * (CAR_HALF_L + 4) + c * side;
+      bullets.push({
+        x: mx, y: my, x0: mx, y0: my,
+        vx: ca * w.speed + fvx * 0.45,
+        vy: sa2 * w.speed + fvy * 0.45,
+        life: w.life || BULLET_LIFE,
+        tracer: w.tracer,
+        blast: !!w.blast,
+        ghost: true,                                    // renders, never hits
+      });
+    }
+    addSparks(m.x + c * (CAR_HALF_L + 8), m.y + sn * (CAR_HALF_L + 8), 3, '#ffe9a8', 180);
+    playShot();
+    return;
+  }
+
+  if (m.t === 'bang') {
+    if (typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    explode(m.x, m.y);
+    return;
+  }
+
+  if (m.t === 'item') {
+    // someone took a box: hide it here too, and restart its timer
+    const b = boxes.find((x) => x.id === m.id);
+    if (b && b.active) { b.active = false; b.timer = BOX_RESPAWN; b.spin = 0; }
+    return;
+  }
+
+  if (m.t === 'destroy') {
+    const did = Number(m.did);
+    if (!Number.isFinite(did)) return;
+    const s = solidById.get(did);
+    if (s && !s.dead && typeof s.hp === 'number') destroySolid(s, true);
+    return;
+  }
+
+  if (m.t === 'blast') {
+    if (typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    const r = Number.isFinite(m.r) ? clamp(m.r, 20, 900) : 150;
+    const p = Number.isFinite(m.p) ? clamp(m.p, 0, 1) : 0.5;
+    const own = Number.isFinite(m.own) ? m.own : (m.from || 0);
+    // anything this blast sets off is not reported back, or a chain of
+    // explosions would bounce between clients forever
+    suppressBlast = true;
+    try { explode(m.x, m.y, { silent: true, radius: r, power: p, owner: own }); }
+    finally { suppressBlast = false; }
+    return;
+  }
+
+  if (m.t === 'burn') {
+    // someone else's napalm: the same pool of fire burns here
+    if (typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    const r = Number.isFinite(m.r) ? clamp(m.r, 8, 200) : 30;
+    const life = Number.isFinite(m.life) ? clamp(m.life, 1, 40) : 6;
+    addFire(m.x, m.y, r, life, true);
+    return;
+  }
+
+  if (m.t === 'nuke') {
+    if (typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    armNuke(m.x, m.y, m.from, true);
+    return;
+  }
+
+  if (m.t === 'ped') {
+    // someone ran a pedestrian down: remove the same one here
+    const id = Number(m.id);
+    if (!Number.isFinite(id)) return;
+    const p = pedIndexById(id);
+    if (p && p.alive) {
+      p.alive = false;
+      p.respawn = PED_RESPAWN;      // and they come back here too, or the street empties
+      addSparks(p.x, p.y, 8, '#b3241c', 200);
+    }
+    return;
+  }
+
+  if (m.t === 'mine') {
+    if (typeof m.x !== 'number' || typeof m.y !== 'number') return;
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    // a mine from someone else: spawn it here so it can hurt us, but never
+    // let it arm on top of them
+    mines.push({ x: m.x, y: m.y, life: MINE_LIFE, arm: MINE_ARM, owner: m.from || 0, spin: 0 });
+    return;
+  }
+
+  if (m.t === 'use') {
+    if (typeof m.kind !== 'string') return;
+    return;   // effects follow from the state flags; nothing to do here
+  }
+
+  if (m.t === 'kill') {
+    pushKillFeed(m);
+    return;
+  }
+
+  if (m.t === 'hit') {
+    // someone shot us. The shooter already decided it connected, so we do not
+    // re-test the hit here; we just take the bite and show the sparks.
+    if (typeof m.dmg !== 'number' || !Number.isFinite(m.dmg)) return;
+    addSparks(car.x, car.y, 7, '#ff8a3d', 240);
+    if (typeof m.from === 'number') car.lastHitBy = m.from;
+    applyDamage(car.x, car.y, clamp(m.dmg, 0, 0.25), 3);
+    return;
+  }
+
+  if (m.t === 'bump') {
+    if (typeof m.vx !== 'number' || typeof m.vy !== 'number') return;
+    if (typeof m.from === 'number') car.lastHitBy = m.from;
+    if (!Number.isFinite(m.vx) || !Number.isFinite(m.vy)) return;
+    const relVx = m.vx - car.vx, relVy = m.vy - car.vy;
+    const s = Math.hypot(relVx, relVy);
+    if (s > IMPACT_FREE) applyDamage(car.x, car.y, (s - IMPACT_FREE) / IMPACT_SCALE, 4);
+    addSmoke(car.x, car.y, 4);
+    return;
+  }
+}
+
+function adoptPeer(id, name, color, x, y) {
+  const entry = NET.roster.find((p) => p.id === id);
+  NET.peers.set(id, {
+    id,
+    name: String(name || (entry && entry.name) || 'racer').slice(0, 16),
+    color: /^#[0-9a-f]{6}$/i.test(color || '') ? color : ((entry && entry.color) || '#c8453a'),
+    x, y, a: 0, vx: 0, vy: 0, hb: 0, damage: 0,
+    tx: x, ty: y, ta: 0,
+    last: performance.now(),
+  });
+}
+
+function onRemoteState(from, m) {
+  if (typeof from !== 'number') return;
+  if (from === NET.id) return;
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y) || !Number.isFinite(m.a)) return;
+
+  let p = NET.peers.get(from);
+  if (!p) {
+    adoptPeer(from, m.n, m.c, m.x, m.y);
+    p = NET.peers.get(from);
+    if (!p) return;
+    renderPeers();
+    updateLobbyStatus();
+  }
+  p.tx = m.x; p.ty = m.y; p.ta = m.a;
+  p.hb = m.hb ? 1 : 0;
+  p.damage = typeof m.d === 'number' ? m.d : 0;
+  p.skid = !!m.sk;
+  p.bo = !!m.bo;
+  p.sh = !!m.sh;
+  p.item = typeof m.it === 'string' ? m.it : null;
+  p.sx0 = m.sx0; p.sy0 = m.sy0; p.sx1 = m.sx1; p.sy1 = m.sy1;
+  p.last = performance.now();
+  // carry the name too, so a rename shows up immediately rather than waiting
+  // for the next roster broadcast
+  if (typeof m.n === 'string' && m.n) p.name = m.n.slice(0, 16);
+  if (/^#[0-9a-f]{6}$/i.test(m.c || '')) p.color = m.c;
+}
+
+function nameOf(id) {
+  if (id === NET.id) return NET.name || 'you';
+  const p = NET.peers.get(id);
+  if (p) return p.name;
+  const r = NET.roster.find((x) => x.id === id);
+  return r ? (r.name || ('racer' + id)) : 'racer' + id;
+}
+
+function colorOf(id) {
+  if (id === NET.id) return NET.color;
+  const p = NET.peers.get(id);
+  if (p) return p.color;
+  const r = NET.roster.find((x) => x.id === id);
+  return (r && r.color) || '#8fa0b5';
+}
+
+function pushStreak(m) {
+  if (!m || typeof m.streak !== 'number' || m.streak < 2) return;
+  streakBanners.unshift({
+    name: typeof m.name === 'string' ? m.name : ('racer' + m.id),
+    color: /^#[0-9a-f]{6}$/i.test(m.color || '') ? m.color : '#ffd23f',
+    label: STREAK_NAMES[m.streak] || (m.streak + ' IN A ROW'),
+    streak: m.streak,
+    mine: m.id === NET.id,
+    life: 3.2,
+    age: 0,
+  });
+  if (streakBanners.length > 3) streakBanners.length = 3;
+}
+
+function updateStreaks(dt) {
+  for (let i = streakBanners.length - 1; i >= 0; i--) {
+    const b = streakBanners[i];
+    b.life -= dt;
+    b.age += dt;
+    if (b.life <= 0) streakBanners.splice(i, 1);
+  }
+}
+
+function pushKillFeed(m) {
+  if (!m || typeof m !== 'object') return;
+  const victim = typeof m.victim === 'number' ? m.victim : null;
+  const by = typeof m.by === 'number' ? m.by : null;
+  // ignore malformed or self-referential entries rather than showing nonsense
+  if (victim === null) return;
+  if (by !== null && by === victim) return;
+  killFeed.unshift({
+    by, victim,
+    byName: by !== null ? nameOf(by) : null,
+    victimName: nameOf(victim),
+    byColor: by !== null ? colorOf(by) : '#8fa0b5',
+    victimColor: colorOf(victim),
+    life: KILL_FEED_LIFE,
+    born: performance.now(),
+  });
+  if (killFeed.length > KILL_FEED_MAX) killFeed.length = KILL_FEED_MAX;
+}
+
+function updateKillFeed(dt) {
+  for (let i = killFeed.length - 1; i >= 0; i--) {
+    killFeed[i].life -= dt;
+    if (killFeed[i].life <= 0) killFeed.splice(i, 1);
+  }
+}
+
+function updateLobbyStatus() {
+  const n = NET.peers.size;
+  setNetStatus(n ? 'live' : 'wait',
+    n ? `Playing with ${n} other${n === 1 ? '' : 's'}.` : 'You are the only one here right now.');
+}
+
+// ---------------------------------------------------------------- wire format
+// Positions are quantised to integers: full-precision floats would be
+// needlessly chatty on a link that runs 20 times a second.
+function encodeState() {
+  return {
+    t: 'state',
+    x: Math.round(car.x), y: Math.round(car.y), a: +car.a.toFixed(3),
+    n: NET.name, c: NET.color,
+    hb: handbrake() || car.braking ? 1 : 0,
+    d: +car.damage.toFixed(2),
+    sk: netSkid.on ? 1 : 0,
+    sx0: Math.round(netSkid.x0), sy0: Math.round(netSkid.y0),
+    sx1: Math.round(netSkid.x1), sy1: Math.round(netSkid.y1),
+    // ability flags, so a remote car can show flames or a shield bubble
+    bo: car.boostTimer > 0 ? 1 : 0,
+    sh: car.shieldTimer > 0 ? 1 : 0,
+    it: car.item || null,
+  };
+}
+
+function netTick() {
+  if (!NET.online) return;
+  const now = performance.now();
+  if (now - NET.lastSend < NET_TICK * 1000) return;
+  NET.lastSend = now;
+  send(encodeState());
+}
+
+// ---------------------------------------------------------------- remote cars
+// Ease each remote car toward its last known target so 20Hz updates look
+// smooth at 60fps instead of teleporting.
+function updateNet(dt) {
+  const now = performance.now();
+
+  for (const [id, p] of NET.peers) {
+    if (now - p.last > NET_TIMEOUT * 1000) {
+      NET.peers.delete(id);
+      renderPeers();
+      updateLobbyStatus();
+      continue;
+    }
+    const dist = Math.hypot(p.tx - p.x, p.ty - p.y);
+    const k = dist > 260 ? 1 : 1 - Math.pow(0.0001, dt);   // snap on teleport/respawn
+    p.x += (p.tx - p.x) * k;
+    p.y += (p.ty - p.y) * k;
+    let da = p.ta - p.a;
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    p.a += da * Math.min(1, dt * 14);
+  }
+
+  for (const p of NET.peers.values()) {
+    const dx = car.x - p.x, dy = car.y - p.y;
+    const d = Math.hypot(dx, dy);
+    const minDist = RADIUS * 2;
+    if (d > minDist || d === 0) continue;
+    const nx = dx / d, ny = dy / d;
+    car.x += nx * (minDist - d);
+    car.y += ny * (minDist - d);
+
+    const relVx = car.vx - p.vx, relVy = car.vy - p.vy;
+    const s = Math.hypot(relVx, relVy);
+    if (s > 60) {
+      // Report the impact with the closing velocity, before we bounce, so the
+      // other side computes the same damage we do.
+      if (s > IMPACT_FREE) send({ t: 'bump', to: p.id, vx: Math.round(p.vx), vy: Math.round(p.vy) });
+      car.vx -= relVx * 0.55;
+      car.vy -= relVy * 0.55;
+      if (s > IMPACT_FREE) { car.lastHitBy = p.id; applyDamage(car.x, car.y, (s - IMPACT_FREE) / IMPACT_SCALE, 4); }
+    }
+    p.vx = car.vx; p.vy = car.vy;   // keep the proxy moving so we don't re-trigger
+  }
+}
+
+// ---------------------------------------------------------------- UI
+let els = {};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderPeers() {
+  if (!els.peers) return;
+  const bar = (hp, extra) =>
+    `<span class="hpbar${extra ? ' ' + extra : ''}"><i style="width:${Math.round(hp * 100)}%"></i></span>`;
+  const me = NET.id
+    ? `<div><span class="swatch" style="background:${NET.color}"></span>` +
+      `<span>${escapeHtml(NET.name || 'you')} (you)</span>` +
+      `<span style="margin-left:auto;color:#6f8098">id ${NET.id}</span></div>`
+    : '';
+  const rows = [...NET.peers.values()].map((p) => {
+    const hp = clamp(1 - (p.damage || 0), 0, 1);
+    const tone = hp < 0.25 ? 'low' : hp < 0.6 ? 'mid' : '';
+    return `<div><span class="swatch" style="background:${p.color}"></span>` +
+      `<span>${escapeHtml(p.name)}</span>` +
+      `<span style="margin-left:auto;color:#6f8098">${Math.round(Math.hypot(car.x - p.x, car.y - p.y))}m</span>` +
+      bar(hp, tone) + `</div>`;
+  });
+  els.peers.innerHTML = me + rows.join('');
+
+  if (els.board) {
+    const board = NET.scores.length
+      ? NET.scores
+      : [{ id: NET.id, name: NET.name, color: NET.color, kills: 0, deaths: 0 }];
+    els.board.innerHTML = board.map((r, i) =>
+      `<div class="lbrow${r.id === NET.id ? " me" : ""}">` +
+      `<span class="rank">${i + 1}</span>` +
+      `<span class="swatch" style="background:${r.color || '#c8453a'}"></span>` +
+      `<span class="lbname">${escapeHtml(r.name || ("racer" + r.id))}</span>` +
+      `<span class="kills">${r.kills}</span>` +
+      `<span class="streak">${r.streak ? '\u{1F525}' + r.streak : ''}</span>` +
+      `<span class="deaths">${r.deaths}</span>` +
+      `</div>`
+    ).join('');
+  }
+}
+
+function initNetUI() {
+  const el = (id) => document.getElementById(id);
+  els = {
+    net: el('net'), status: el('netStatus'), peers: el('netPeers'),
+    name: el('netName'), hint: el('netHint'), retry: el('netRetry'), board: el('netBoard'),
+    resetPads: el('netResetPads'), close: el('netClose'),
+  };
+  // Restore the name and colour from last time, if there is one.
+  const saved = loadProfile();
+  if (saved) {
+    if (saved.name) NET.name = saved.name;
+    if (saved.color) NET.color = saved.color;
+  }
+
+  // Give ourselves a name up front. The server would invent one anyway, but
+  // then our own screen would show 'you' while everyone else saw 'racer12'.
+  if (!NET.name) NET.name = 'racer' + Math.floor(Math.random() * 900 + 100);
+  NET.color = colourForName(NET.name);
+  els.name.value = NET.name;
+
+  els.name.addEventListener('input', () => {
+    NET.name = els.name.value.trim().slice(0, 16) || NET.name;
+    NET.color = colourForName(NET.name);
+    saveProfile();
+    sendHello();
+    renderPeers();
+  });
+  els.name.addEventListener('blur', saveProfile);
+
+  {
+    const fsBtn = document.querySelector('#touch .tbtn.fs');
+    if (fsBtn && !fullscreenSupported()) fsBtn.hidden = true;
+  }
+
+  if (els.resetPads) {
+    els.resetPads.hidden = !touchActive;   // only useful where there are pads
+    els.resetPads.onclick = () => { if (window.__resetPads) window.__resetPads(); };
+    }
+
+  if (els.close) els.close.onclick = () => { els.net.classList.add('hidden'); };
+
+  // tapping the panel's own background does nothing, but tapping the canvas
+  // behind it puts it away: the obvious gesture on a phone
+  document.addEventListener('pointerdown', (e) => {
+    if (els.net.classList.contains('hidden')) return;
+    if (els.net.contains(e.target)) return;
+    if (e.target && e.target.closest && e.target.closest('#touch')) return;
+    if (e.target === cvs) els.net.classList.add('hidden');
+  }, true);
+
+  if (els.retry) {
+    els.retry.onclick = () => {
+      if (NET.ws) NET.ws.close();
+      else { NET.retry = 0; connectRelay(); }
+    };
+  }
+
+  if (relayUrl()) els.hint.textContent = `Everyone on ${location.host} shares one game — just open this page.`;
+  else els.hint.textContent = 'Run server.js and open the page through it to play with others.';
+
+  connectRelay();
+}
+
+// Fullscreen hides the browser chrome, which on a phone is a sizeable chunk
+// of the screen. Feature-detected: iOS Safari only offers it on video, so
+// the button is hidden there rather than doing nothing.
+function fullscreenSupported() {
+  const el = document.documentElement;
+  return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+}
+
+function fullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function toggleFullscreen() {
+  const el = document.documentElement;
+  try {
+    if (fullscreenActive()) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) {
+        const r = exit.call(document);
+        if (r && r.catch) r.catch(() => {});
+      }
+    } else {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) {
+        const r = req.call(el, { navigationUI: 'hide' });
+        if (r && r.catch) r.catch(() => {});   // some browsers reject the options
+      }
+    }
+  } catch (err) { /* leave the page as it is */ }
+}
+
+let shopEls = {};
+
+function shopAffordable(key) {
+  const level = (car.upgrades && car.upgrades[key]) || 0;
+  const cost = upgradeCost(key, level);
+  return cost !== Infinity && car.money >= cost;
+}
+
+function renderShop() {
+  if (!shopEls.list) return;
+  shopEls.money.textContent = '$' + car.money;
+  shopEls.list.innerHTML = Object.keys(UPGRADES).map((key) => {
+    const u = UPGRADES[key];
+    const level = (car.upgrades && car.upgrades[key]) || 0;
+    const cost = upgradeCost(key, level);
+    const can = shopAffordable(key);
+    const label = '$' + cost;
+    return '<div class="urow"><div class="uinfo' + (can ? '' : ' dim') + '">' +
+      '<div class="uname">' + u.name +
+      ' <span class="ulvl">LV ' + level + '</span></div>' +
+      '<div class="ublurb">' + u.blurb + '</div></div>' +
+      '<button data-buy="' + key + '"' + (can ? '' : ' disabled') + '>' + label + '</button></div>';
+  }).join('');
+}
+
+function toggleShop() {
+  if (!shopEls.panel) return;
+  shopEls.panel.classList.toggle('hidden');
+  if (!shopEls.panel.classList.contains('hidden')) renderShop();
+}
+
+function initShop() {
+  const el = (id) => document.getElementById(id);
+  shopEls = {
+    panel: el('shop'), list: el('shopList'), money: el('shopMoney'),
+    close: el('shopClose'), reset: el('shopReset'),
+  };
+  if (!shopEls.panel) return;
+  shopEls.close.onclick = () => shopEls.panel.classList.add('hidden');
+  shopEls.reset.onclick = () => {
+    car.upgrades = { engine: 0, armour: 0, nitro: 0, tyres: 0, guns: 0 };
+    car.money = 0;
+    saveProgress();
+    renderShop();
+  };
+  shopEls.list.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('button[data-buy]') : null;
+    if (btn) buyUpgrade(btn.dataset.buy);
+  });
+  loadProgress();
+  renderShop();
+}
+
+function toggleNetUI() {
+  if (els.net) els.net.classList.toggle('hidden');
+}
+
+// =====================================================================
+// time of day
+//
+// The cycle is disabled: the game is permanently day. The sun sits at a
+// fixed late-morning angle, which keeps a warm tint and throws shadows
+// without the flatness of true noon. Everything downstream (tint, shadow
+// direction, light pass) still reads from sunAlt(), so re-enabling a cycle
+// would only mean making dayT advance again.
+// =====================================================================
+const DAY_T = 0.34;            // late morning: warm light, readable shadows
+const dayT = DAY_T;
+
+const sunAlt = () => Math.sin(2 * Math.PI * (dayT - 0.25));
+const nightF = () => 0;        // never night
+
+// Cached: dayT never changes, so this string never needs rebuilding.
+let sceneTintCache = null;
+function sceneTint() {
+  if (sceneTintCache) return sceneTintCache;
+  const alt = sunAlt();
+  const dayTint = mixColor('#ffc79a', '#ffffff', smooth(clamp(alt * 1.8, 0, 1)));
+  sceneTintCache = mixColor(dayTint, '#2c3560', smooth(nightF()));
+  return sceneTintCache;
+}
+
+// sun shadow: long and horizontal near sunrise/sunset, short at noon, none at night
+function sunShadow() {
+  const alt = sunAlt();
+  if (alt <= 0.06) return { ox: 0, oy: 0, a: 0 };
+  const len = Math.min(210, 30 / Math.max(alt, 0.15));
+  const dir = -Math.cos(2 * Math.PI * (dayT - 0.25));
+  return { ox: dir * len, oy: dir * len * 0.16, a: clamp(alt * 1.5, 0, 0.5) };
+}
+
+function clockText() {
+  const mins = Math.floor(dayT * 24 * 60);
+  const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+  const mm = String(mins % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+const partOfDay = () => {
+  const a = sunAlt();
+  if (a > 0.55) return 'MIDDAY';
+  if (a > 0.12) return dayT < 0.5 ? 'MORNING' : 'AFTERNOON';
+  return dayT < 0.5 ? 'SUNRISE' : 'SUNSET';
+};
+
+// =====================================================================
+// world generation
+// =====================================================================
+const ROOFS = ['#8d8577', '#7d8a92', '#96897a', '#6f7a84', '#8a8074', '#7a7268', '#93998c'];
+const NEON = ['#ff3ea5', '#25e0ff', '#b46bff', '#ff5c5c', '#39ff9e', '#ffd23f', '#ff8a3d'];
+const CAR_COLORS = ['#c8453a', '#2f5f9e', '#d9d3c4', '#3d8f6b', '#e0a12b', '#7a4f9e', '#2b2f36', '#b8bcc4'];
+
+const buildings = [];
+const lots = [];
+const openBlock = new Set();
+const neonSigns = [];
+const palms = [];
+const parked = [];
+const lamps = [];
+let solids = [];
+
+// Which blocks stay empty. A few are fixed so there is always somewhere big
+// and open to drift, the rest are random.
+for (let i = 0; i < N; i++) {
+  for (let j = 0; j < N; j++) {
+    if (rng() < 0.2) openBlock.add(i * 100 + j);
+  }
+}
+for (const [i, j] of [[1, 1], [4, 3], [2, 4], [4, 0]]) openBlock.add(i * 100 + j);
+
+function addBuilding(x, y, w, h) {
+  const b = {
+    x, y, w, h,
+    roof: pick(ROOFS),
+    storeys: 1 + ((rng() * 6) | 0),
+    lit: rng() < 0.6,
+    roofBits: [],
+    neonSide: (rng() * 4) | 0,   // 0 top 1 right 2 bottom 3 left
+    neon: null,
+  };
+  // rooftop clutter
+  const nBits = 1 + ((rng() * 3) | 0);
+  for (let i = 0; i < nBits; i++) {
+    const kind = rng();
+    const bw = rand(10, Math.max(14, w * 0.3));
+    const bh = rand(10, Math.max(14, h * 0.3));
+    b.roofBits.push({
+      kind: kind < 0.5 ? 'ac' : kind < 0.78 ? 'tank' : 'plant',
+      x: x + rand(6, Math.max(7, w - bw - 6)),
+      y: y + rand(6, Math.max(7, h - bh - 6)),
+      w: bw, h: bh,
+    });
+  }
+  if (rng() < 0.72) {
+    b.neon = { hex: pick(NEON), w: Math.min(w, h) * rand(0.45, 0.8), h: 7 };
+  }
+  buildings.push(b);
+  return b;
+}
+
+function carveBlock(i, j) {
+  // open blocks stay empty: parking lots and plazas, which double as the
+  // room you actually want for sliding the car around
+  if (openBlock.has(i * 100 + j)) {
+    lots.push({ x: i * STEP + ROAD, y: j * STEP + ROAD, w: BLOCK, h: BLOCK });
+    return;
+  }
+  const x0 = i * STEP + ROAD + 14;
+  const y0 = j * STEP + ROAD + 14;
+  const size = BLOCK - 28;
+  const alley = 16;
+  const r = rng();
+
+  if (r < 0.3) {
+    addBuilding(x0, y0, size, size);
+  } else if (r < 0.62) {
+    const w = (size - alley) * (0.35 + rng() * 0.3);
+    addBuilding(x0, y0, w, size);
+    addBuilding(x0 + w + alley, y0, size - alley - w, size);
+  } else if (r < 0.85) {
+    const h = (size - alley) * (0.35 + rng() * 0.3);
+    addBuilding(x0, y0, size, h);
+    addBuilding(x0, y0 + h + alley, size, size - alley - h);
+  } else {
+    const w = (size - alley) / 2, h = (size - alley) / 2;
+    addBuilding(x0, y0, w, h);
+    addBuilding(x0 + w + alley, y0, w, h);
+    addBuilding(x0, y0 + h + alley, w, h);
+    addBuilding(x0 + w + alley, y0 + h + alley, w, h);
+  }
+}
+for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) carveBlock(i, j);
+
+// our colour comes from our name, so it matches what everyone else sees
+NET.color = colourForName(NET.name);
+
+function onRoad(x, y, pad = 0) {
+  const lo = ROAD / 2 - pad, hi = WORLD - ROAD / 2 + pad;
+  if (x < lo || y < lo || x > hi || y > hi) return false;
+  return (mod(x, STEP) < ROAD + pad) || (mod(y, STEP) < ROAD + pad);
+}
+function insideRoad(x, y) { return onRoad(x, y, 0); }
+
+// keep parked cars off the intersections so crossing traffic has clearance
+function nearIntersection(x, y, r) {
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      const cx = i * STEP + ROAD / 2, cy = j * STEP + ROAD / 2;
+      if (Math.abs(x - cx) < r && Math.abs(y - cy) < r) return true;
+    }
+  }
+  return false;
+}
+
+// neon signs sit on the roof edge that faces a street, so their glow spills
+// onto the road below
+for (const b of buildings) {
+  if (!b.neon) continue;
+  const side = b.neonSide;
+  if (side === 0) { b.neon.x = b.x + (b.w - b.neon.w) / 2; b.neon.y = b.y + 6; }
+  else if (side === 1) { b.neon.x = b.x + b.w - b.neon.h - 6; b.neon.y = b.y + (b.h - b.neon.w) / 2; b.neon.rot = true; }
+  else if (side === 2) { b.neon.x = b.x + (b.w - b.neon.w) / 2; b.neon.y = b.y + b.h - b.neon.h - 6; }
+  else { b.neon.x = b.x + 6; b.neon.y = b.y + (b.h - b.neon.w) / 2; b.neon.rot = true; }
+  neonSigns.push(b.neon);
+}
+
+// ---- palm trees: beach ring + scattered along the promenade
+function addPalm(x, y, scale) {
+  palms.push({
+    x, y, s: scale,
+    lean: rand(-0.5, 0.5),
+    fronds: 6 + ((rng() * 3) | 0),
+    seed: rng() * Math.PI * 2,
+  });
+}
+for (let i = 0; i < 190; i++) {
+  const t = rng();
+  if (t < 0.55) {
+    // along the beach
+    const side = (rng() * 4) | 0;
+    const off = rand(WORLD - WALL, WORLD + BEACH - 6);
+    if (side === 0) addPalm(off, rand(-BEACH + 10, 6), rand(0.8, 1.3));
+    else if (side === 1) addPalm(off, WORLD - BEACH + rand(4, BEACH - 8), rand(0.8, 1.3));
+    else if (side === 2) addPalm(rand(WORLD - WALL, WORLD + BEACH - 6), off, rand(0.8, 1.3));
+    else addPalm(rand(-BEACH + 10, 6), off, rand(0.8, 1.3));
+  } else {
+    // on sidewalks, tucked against a building edge
+    const i2 = (rng() * N) | 0, j2 = (rng() * N) | 0;
+    const bx = i2 * STEP + ROAD + 10, by = j2 * STEP + ROAD + 10;
+    const side = (rng() * 4) | 0;
+    const p = side === 0 ? [rand(bx, bx + BLOCK - 14), by]
+      : side === 1 ? [bx + BLOCK - 14, rand(by, by + BLOCK - 14)]
+      : side === 2 ? [rand(bx, bx + BLOCK - 14), by + BLOCK - 14]
+      : [bx, rand(by, by + BLOCK - 14)];
+    if (!onRoad(p[0], p[1], 4)) addPalm(p[0], p[1], rand(0.7, 1.1));
+  }
+}
+
+// ---- parked cars hugging the kerb: sparse, because a street lined with
+// parked cars is a street you cannot drift down
+for (let i = 0; i <= N; i++) {
+  for (let j = 0; j <= N * 8; j++) {
+    const along = j * (STEP / 8) + 24;
+    if (along > WORLD) break;
+    if (rng() > 0.16) continue;                    // most kerbs stay clear
+    const horiz = rng() < 0.5;
+    // roads span i*STEP .. i*STEP+ROAD, so the kerbs sit at both ends
+    const kerbA = 11, kerbB = ROAD - 11;
+    const x = horiz ? along : i * STEP + (rng() < 0.5 ? kerbA : kerbB);
+    const y = horiz ? i * STEP + (rng() < 0.5 ? kerbA : kerbB) : along;
+    if (!onRoad(x, y, 6)) continue;
+    if (nearIntersection(x, y, ROAD * 0.62)) continue;
+    if (Math.abs(x - (STEP * 2 + ROAD / 2)) < 130 && Math.abs(y - (STEP + ROAD / 2)) < 130) continue; // keep spawn clear
+    parked.push({ x, y, a: horiz ? 0 : Math.PI / 2, color: pick(CAR_COLORS) });
+  }
+}
+
+// ---- parked cars out in the lots, ranked only in the top and bottom margins
+// so the middle band is guaranteed clear. That open centre is the whole point
+// of a lot: it is where you can actually swing the car round.
+for (const lot of lots) {
+  const MARGIN = 52;                      // keep clear at top and bottom
+  const midY = lot.y + lot.h / 2;
+  for (const y of [lot.y + 26, lot.y + lot.h - 26]) {
+    if (Math.abs(y - midY) < MARGIN) continue;
+    for (let x = lot.x + 26; x < lot.x + lot.w - 32; x += 46) {
+      if (rng() > 0.3) continue;
+      parked.push({ x, y, a: 0, color: pick(CAR_COLORS) });
+    }
+  }
+}
+
+// ---- street lamps along the kerbs
+for (let i = 0; i <= N; i++) {
+  for (let j = 0; j < N; j++) {
+    lamps.push({ x: i * STEP + ROAD - 8, y: j * STEP + ROAD / 2, dir: 1 });
+    lamps.push({ x: i * STEP + ROAD + 8, y: (j + 1) * STEP + BLOCK + ROAD / 2, dir: -1 });
+    lamps.push({ x: j * STEP + ROAD / 2, y: i * STEP + ROAD - 8, dir: 2 });
+    lamps.push({ x: (j + 1) * STEP + BLOCK + ROAD / 2, y: i * STEP + ROAD + 8, dir: -2 });
+  }
+}
+
+// ---- collision set: buildings plus the props you can actually hit
+// parked cars are rotated, so their box has to follow the car's heading
+function parkedBox(p) {
+  const c = Math.abs(Math.cos(p.a)), s = Math.abs(Math.sin(p.a));
+  const hx = 20 * c + 10 * s, hy = 20 * s + 10 * c;
+  return { x: p.x - hx, y: p.y - hy, w: hx * 2, h: hy * 2 };
+}
+// Every solid carries what it takes to knock down (hp) and a stable id, so
+// a wreck can be broadcast and reproduced on the other players' screens.
+solids = buildings.concat(
+  palms.map((p) => ({ x: p.x - 5, y: p.y - 5, w: 10, h: 10, kind: 'palm', hp: 2, ref: p })),
+  parked.map((p) => Object.assign(parkedBox(p), { kind: 'car', hp: 3, ref: p }))
+);
+for (const b of buildings) { b.kind = 'building'; b.hp = 9; b.maxHp = 9; }
+// Index by id rather than by array position: the array is only ever appended
+// to in the game, but a lookup that depends on ordering is a trap.
+const solidById = new Map();
+solids.forEach((s, i) => { s.did = i; solidById.set(i, s); });
+
+// =====================================================================
+// pedestrians
+//
+// Walkers pace the pavement around each block and bolt when a car comes at
+// them. Running one down spills cash, which you scoop up by driving over it.
+// The crowd is generated from the same seed on every client, and a kill is
+// broadcast so everyone sees the same street empty out.
+// =====================================================================
+const peds = [];
+const cash = [];            // dropped money, collected by driving over it
+const popups = [];          // floating +$ text
+const PED_TONES = [
+  ['#d9a06b', '#3f6ea8'], ['#c98a5a', '#8a3f5a'], ['#e0b48c', '#3f8a63'],
+  ['#a9744a', '#6b5aa8'], ['#e8c39e', '#a85a3f'], ['#b8845c', '#5a6b8a'],
+];
+const PED_PANIC_RANGE = 150;
+const PED_RESPAWN = 18;       // seconds before a fresh face appears
+const PED_KILL_SPEED = 90;   // below this you just nudge them
+
+function pedPathSpot(p, t) {
+  // walk the perimeter of the pavement ring around a block
+  const x0 = p.bx + 10, y0 = p.by + 10;
+  const w = BLOCK - 20, h = BLOCK - 20;
+  const L = 2 * (w + h);
+  t = ((t % L) + L) % L;
+  if (t < w) return { x: x0 + t, y: y0, a: 0 };
+  if (t < w + h) return { x: x0 + w, y: y0 + (t - w), a: Math.PI / 2 };
+  if (t < 2 * w + h) return { x: x0 + w - (t - w - h), y: y0 + h, a: Math.PI };
+  return { x: x0, y: y0 + h - (t - 2 * w - h), a: -Math.PI / 2 };
+}
+
+function spawnPeds() {
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      if (openBlock.has(i * 100 + j)) continue;   // empty lots have nobody to walk
+      const bx = i * STEP + ROAD, by = j * STEP + ROAD;
+      const count = 1 + ((rng() * 3) | 0);
+      for (let k = 0; k < count; k++) {
+        const tone = PED_TONES[(rng() * PED_TONES.length) | 0];
+        const p = {
+          id: peds.length, bx, by,
+          t: rng() * 2 * ((BLOCK - 20) * 2),
+          x: 0, y: 0, a: 0,
+          speed: 34 + rng() * 22,
+          phase: rng() * 6.28,
+          skin: tone[0], clothes: tone[1],
+          alive: true, panic: 0, fleeA: 0, respawn: 0,
+        };
+        const spot = pedPathSpot(p, p.t);
+        p.x = spot.x; p.y = spot.y; p.a = spot.a;
+        peds.push(p);
+      }
+    }
+  }
+}
+spawnPeds();
+
+function pedIndexById(id) {
+  for (const p of peds) if (p.id === id) return p;
+  return null;
+}
+
+function dropCash(x, y, value) {
+  saveProgress();          // the purse changed; remember it
+  cash.push({ x, y, value, life: 26, bob: rng() * 6.28 });
+  popups.push({ x, y, text: '+' + value, life: 1.4, color: '#4bd07a' });
+}
+
+// `silent` is set when the kill arrived over the wire, so we do not echo it.
+function killPed(p, silent) {
+  if (!p || !p.alive) return false;
+  p.alive = false;
+  // the street does not stay empty: someone else wanders in after a while
+  p.respawn = PED_RESPAWN;
+  addSparks(p.x, p.y, 10, '#b3241c', 220);
+  addSmoke(p.x, p.y, 2);
+  const value = 20 + ((rng() * 5) | 0) * 10;   // $20-$60, GTA-ish pocket change
+  if (!silent) {
+    car.money += value;
+    dropCash(p.x, p.y, value);
+  }
+  send({ t: 'ped', id: p.id });
+  playSquash();
+  return true;
+}
+
+function revivePed(p) {
+  p.alive = true;
+  p.panic = 0;
+  p.respawn = 0;
+  // step back onto the pavement somewhere else on the block
+  p.t = rng() * 2 * ((BLOCK - 20) * 2);
+  const spot = pedPathSpot(p, p.t);
+  p.x = spot.x; p.y = spot.y; p.a = spot.a;
+  p.speed = 34 + rng() * 22;
+}
+
+function updatePeds(dt) {
+  const carSpeed = Math.hypot(car.vx, car.vy);
+  for (const p of peds) {
+    if (!p.alive) {
+      if (p.respawn > 0) {
+        p.respawn -= dt;
+        if (p.respawn <= 0) revivePed(p);
+      }
+      continue;
+    }
+    const dx = p.x - car.x, dy = p.y - car.y;
+    const d = Math.hypot(dx, dy);
+
+    if (d < PED_PANIC_RANGE && carSpeed > 50) {
+      p.panic = 1.8;
+      p.fleeA = Math.atan2(dy, dx);      // straight away from the bonnet
+    }
+
+    if (p.panic > 0) {
+      p.panic -= dt;
+      // weave a little so they are not a straight line to hit
+      p.phase += dt * 9;
+      p.a = p.fleeA + Math.sin(p.phase) * 0.25;
+      const run = 118;
+      p.x += Math.cos(p.a) * run * dt;
+      p.y += Math.sin(p.a) * run * dt;
+      // and shove them out of anything solid they back into
+      for (const sol of solids) {
+        if (sol.dead) continue;
+        if (p.x < sol.x - 6 || p.x > sol.x + sol.w + 6 ||
+            p.y < sol.y - 6 || p.y > sol.y + sol.h + 6) continue;
+        const hit = circleRect(p.x, p.y, 7, sol);
+        if (hit) { p.x += hit.nx * hit.depth; p.y += hit.ny * hit.depth; }
+      }
+    } else {
+      // back on the pavement, walking the block
+      p.t += p.speed * dt;
+      const spot = pedPathSpot(p, p.t);
+      p.x = spot.x; p.y = spot.y; p.a = spot.a;
+      p.phase += dt * p.speed * 0.13;
+    }
+
+    // did that car just hit us?
+    if (car.wreckTimer <= 0 && carSpeed > PED_KILL_SPEED) {
+      const ca = Math.cos(car.a), sa = Math.sin(car.a);
+      const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
+      if (Math.abs(lx) < CAR_HALF_L + 5 && Math.abs(ly) < CAR_HALF_W + 5) {
+        killPed(p, false);
+      }
+    }
+  }
+
+  // money on the ground: drive over it to pick it up
+  for (let i = cash.length - 1; i >= 0; i--) {
+    const c = cash[i];
+    c.life -= dt;
+    c.bob += dt * 3;
+    if (c.life <= 0) { cash.splice(i, 1); continue; }
+    if (car.wreckTimer > 0) continue;
+    if (Math.hypot(car.x - c.x, car.y - c.y) < 34) {
+      car.money += c.value;
+      saveProgress();
+      popups.push({ x: c.x, y: c.y, text: '+' + c.value, life: 1.1, color: '#ffd23f' });
+      addSparks(c.x, c.y, 6, '#ffd23f', 140);
+      playCoin();
+      cash.splice(i, 1);
+    }
+  }
+
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const q = popups[i];
+    q.life -= dt;
+    q.y -= dt * 26;
+    if (q.life <= 0) popups.splice(i, 1);
+  }
+}
+
+// =====================================================================
+// the shop
+//
+// Money earned on the street buys permanent improvements to the car. Levels
+// are kept in local storage, so a good run is worth something next time.
+// =====================================================================
+// No ceiling: every upgrade keeps taking levels, and each one costs more than
+// the last. The only limit is what you can afford.
+const UPGRADES = {
+  engine: { name: 'ENGINE',  blurb: 'top speed and acceleration', cost: 120, step: 130 },
+  armour: { name: 'ARMOUR',  blurb: 'less damage from every hit',  cost: 100, step: 120 },
+  nitro:  { name: 'NITRO',   blurb: 'longer boosts',              cost: 140, step: 150 },
+  tyres:  { name: 'TYRES',   blurb: 'more grip in the corners',   cost: 90,  step: 100 },
+  guns:   { name: 'GUNS',    blurb: 'harder-hitting rounds',      cost: 110, step: 120 },
+};
+// A save file could claim any level; this is only a sanity bound, not a cap.
+const MAX_LEVEL = 10000;
+// The price climbs with every level, so late upgrades are a real grind.
+const upgradeCost = (key, level) => {
+  const u = UPGRADES[key];
+  if (!u) return Infinity;
+  const lv = Math.max(0, Math.min(MAX_LEVEL, Math.floor(level) || 0));
+  return u.cost + lv * u.step;
+};
+
+// Derived numbers. Kept as functions so a purchase takes effect at once.
+const engineLevel = () => (car.upgrades && car.upgrades.engine) || 0;
+const armourLevel = () => (car.upgrades && car.upgrades.armour) || 0;
+const nitroLevel = () => (car.upgrades && car.upgrades.nitro) || 0;
+const tyreLevel = () => (car.upgrades && car.upgrades.tyres) || 0;
+const gunLevel = () => (car.upgrades && car.upgrades.guns) || 0;
+
+// Levels are unbounded, so the curves bend over rather than running away.
+// Each still grows forever -- it just grows more slowly the deeper you go,
+// which keeps the car drivable and the physics step from being outrun.
+const soften = (level, k) => Math.sqrt(Math.max(0, level)) * k;
+
+const topSpeedNow = () => MAX_SPEED * (1 + soften(engineLevel(), 0.19));
+const accelNow = () => ACCEL * (1 + soften(engineLevel(), 0.24));
+const gripNow = () => GRIP * (1 + soften(tyreLevel(), 0.14));
+const boostTimeNow = () => 1.8 + soften(nitroLevel(), 0.9);
+const gunDamageNow = (base) => base * (1 + soften(gunLevel(), 0.5));
+// armour keeps helping, but can never make you untouchable
+const damageScaleNow = () => 0.35 + 0.65 / (1 + soften(armourLevel(), 0.55));
+
+function buyUpgrade(key) {
+  const u = UPGRADES[key];
+  if (!u || !car.upgrades) return false;
+  const level = car.upgrades[key] || 0;
+  if (level >= MAX_LEVEL) return false;
+  const cost = upgradeCost(key, level);
+  if (car.money < cost) return false;
+  car.money -= cost;
+  car.upgrades[key] = level + 1;
+  // a purchase should be felt: patch up the car and top the tank
+  if (key === 'armour') car.damage = Math.max(0, car.damage - 0.25);
+  addSparks(car.x, car.y, 12, '#ffd23f', 200);
+  playCoin();
+  saveProgress();
+  renderShop();
+  return true;
+}
+
+// =====================================================================
+// item boxes
+//
+// Mario Kart style: drive through a box, get a random ability. Boxes
+// respawn on a timer and their taken state is shared, so everyone sees the
+// same thing. Placement is seeded, so every client generates the same map.
+// =====================================================================
+const ITEMS = ['boost', 'shield', 'repair', 'mine', 'nuke', 'smg', 'shotgun', 'cannon', 'rpg', 'missile', 'sniper', 'minigun', 'grenade', 'napalm', 'flame', 'railgun', 'cluster'];
+
+// Weapons are a different kind of pickup: collecting one arms the car
+// straight away with a limited supply, rather than going into the item slot.
+const WEAPONS = {
+  gun:     { name: 'GUN',     interval: 0.085, count: 2, spread: 0.012, speed: 1150, dmg: 0.055, ammo: Infinity, tracer: '#ffea9e' },
+  // A burst weapon, not a hose: two rounds at about 25 a second, with the
+  // magazine scaled to match so it lasts the same length of time.
+  smg:     { name: 'SMG',     interval: 0.08,    count: 2, spread: 0.075, speed: 1900, dmg: 0.018, ammo: 140,      tracer: '#bfe9ff' },
+  shotgun: { name: 'SHOTGUN', interval: 0.72,  count: 7, spread: 0.26,  speed: 1000, dmg: 0.05,  ammo: 22,       tracer: '#ffd7a1' },
+  cannon:  { name: 'CANNON',  interval: 0.95,  count: 1, spread: 0.0,   speed: 880,  dmg: 0.2,   ammo: 10,       tracer: '#ffb0a0', blast: true, blastR: 90,  blastP: 0.12, envPower: 3, homing: 1.5, life: 2.6, trail: true },
+  // the rocket is slow enough to see coming and leaves a wide hole
+  rpg:     { name: 'RPG',     interval: 1.5,   count: 1, spread: 0.0,   speed: 560,  dmg: 0.3,   ammo: 5,        tracer: '#ffd0b0', blast: true, blastR: 190, blastP: 0.3,  envPower: 9, life: 2.2 },
+  // and the missile chases the nearest other player
+  missile: { name: 'MISSILE', interval: 1.2,   count: 1, spread: 0.0,   speed: 480,  dmg: 0.25,  ammo: 6,        tracer: '#c9ffe0', blast: true, blastR: 130, blastP: 0.22, envPower: 6, life: 5.0, homing: 3.4, trail: true },
+
+  // ---- the Liero end of the cabinet ----
+  // A hard-hitting single round that crosses the block in a blink.
+  sniper:   { name: 'SNIPER',   interval: 1.1,  count: 1, spread: 0.0,  speed: 2400, dmg: 0.45, ammo: 12,   tracer: '#e6f6ff', life: 1.1 },
+  // A stream of weak rounds, spread wide.
+  minigun:  { name: 'MINIGUN',  interval: 0.08,  count: 1, spread: 0.10, speed: 1500, dmg: 0.022, ammo: 300,  tracer: '#ffe9a8', life: 0.8 },
+  // Lobbed, bounces off walls, goes off on a fuse.
+  grenade:  { name: 'GRENADE',  interval: 1.0,  count: 1, spread: 0.0,  speed: 700,  dmg: 0.15, ammo: 10,   tracer: '#a7e08f', blast: true, blastR: 150, blastP: 0.35, envPower: 6, life: 1.3, bounce: 3, fuse: true },
+  // Fire that sticks to the ground and keeps burning.
+  napalm:   { name: 'NAPALM',   interval: 0.9,  count: 6, spread: 0.55, speed: 520,  dmg: 0.07, ammo: 20,   tracer: '#ff9a3d', life: 0.55, fire: 26, fireR: 34 },
+  flame:    { name: 'FLAME',    interval: 0.05, count: 3, spread: 0.42, speed: 430,  dmg: 0.03, ammo: 300,  tracer: '#ffb347', life: 0.32, fire: 8,  fireR: 20 },
+  // Goes through everything in a straight line.
+  railgun:  { name: 'RAILGUN',  interval: 1.7,  count: 1, spread: 0.0,  speed: 3000, dmg: 0.5,  ammo: 8,    tracer: '#c9a0ff', life: 1.0, pierce: true },
+  // Bursts into a shower of bomblets.
+  cluster:  { name: 'CLUSTER',  interval: 1.3,  count: 1, spread: 0.0,  speed: 780,  dmg: 0.1,  ammo: 12,   tracer: '#ffd7a1', blast: true, blastR: 110, blastP: 0.2, envPower: 4, life: 0.9, bounce: 2, fuse: true, split: 7, splitR: 120 },
+};
+const isWeapon = (k) => Object.prototype.hasOwnProperty.call(WEAPONS, k);
+const ITEM_INFO = {
+  gun:     { label: 'GUN',     color: '#dfe8f4' },
+  boost:  { label: 'BOOST',  color: '#ffd23f' },
+  shield: { label: 'SHIELD', color: '#25e0ff' },
+  repair: { label: 'REPAIR', color: '#4bd07a' },
+  mine:   { label: 'MINE',   color: '#ff5c5c' },
+  nuke:   { label: 'NUKE',   color: '#ff8a3d' },
+  smg:     { label: 'SMG',     color: '#8fd4ff' },
+  shotgun: { label: 'SHOTGUN', color: '#ffcf87' },
+  cannon:  { label: 'CANNON',  color: '#ff9a7a' },
+  rpg:     { label: 'RPG',     color: '#ffbe6b' },
+  missile: { label: 'MISSILE', color: '#7dffb2' },
+  sniper:   { label: 'SNIPER',   color: '#cfe9ff' },
+  minigun:  { label: 'MINIGUN',  color: '#ffe9a8' },
+  grenade:  { label: 'GRENADE',  color: '#a7e08f' },
+  napalm:   { label: 'NAPALM',   color: '#ff8a3d' },
+  flame:    { label: 'FLAME',    color: '#ffb347' },
+  railgun:  { label: 'RAILGUN',  color: '#c9a0ff' },
+  cluster:  { label: 'CLUSTER',  color: '#ffd7a1' },
+};
+// Item weights: a nuke should be a rare, memorable moment rather than a
+// regular occurrence.
+const ITEM_WEIGHTS = { boost: 14, repair: 12, mine: 9, shield: 9, nuke: 3, smg: 9, shotgun: 8, cannon: 5, rpg: 4, missile: 4, sniper: 5, minigun: 4, grenade: 5, napalm: 4, flame: 4, railgun: 3, cluster: 4 };
+const BOX_RESPAWN = 14;      // seconds before a taken box comes back
+const BOX_RADIUS = 30;       // how close you must pass to collect
+
+const boxes = [];
+(function placeBoxes() {
+  // a few in each open lot, a few at intersections, all clear of geometry
+  const spots = [];
+  for (const lot of lots) {
+    for (let a = 0; a < 2; a++) {
+      spots.push({ x: lot.x + rand(60, lot.w - 60), y: lot.y + rand(60, lot.h - 60) });
+    }
+  }
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      if (rng() < 0.45) continue;
+      spots.push({ x: i * STEP + ROAD / 2, y: j * STEP + ROAD / 2 });
+    }
+  }
+  for (const sp of spots) {
+    if (!clearOfSolids(sp.x, sp.y, 34)) continue;
+    const id = boxes.length;
+    // Deterministic per box rather than rolled at runtime: the world is
+    // seeded identically on every client, so this keeps the contents in
+    // sync without sending anything. It also means you can learn the map.
+    let h = (id + 1) * 2654435761 >>> 0;
+    h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; h ^= h >>> 13;
+    const roll = (h >>> 0) / 4294967296 * 100;
+    let acc = 0, kind = ITEMS[0];
+    for (const k of ITEMS) { acc += ITEM_WEIGHTS[k] || 1; if (roll < acc) { kind = k; break; } }
+    boxes.push({ id, x: sp.x, y: sp.y, active: true, timer: 0, spin: rng() * 6.28, kind });
+  }
+})();
+
+// =====================================================================
+// car
+// =====================================================================
+// particle/mark buffers are declared first: respawn() clears them and runs at load
+const smoke = [];
+const skids = [];
+const cam = { x: 0, y: 0 };
+// last tyre positions, broadcast so friends see our skid trail
+const netSkid = { x0: 0, y0: 0, x1: 0, y1: 0, on: false };
+
+const car = {
+  x: 0, y: 0, a: 0,
+  vx: 0, vy: 0,
+  damage: 0,
+  engine: 0,
+  wreckTimer: 0,
+  braking: false,
+  lastHitBy: null,   // who to credit if we wreck
+  item: null,        // held ability, once picked up
+  // A small arsenal: one slot per gun type, each with its own ammo. Slot 0
+  // is the built-in gun and never runs out.
+  guns: null,
+  gunIndex: 0,
+  money: 0,        // keeps across wrecks, like the games it borrows from
+  upgrades: null,  // set in respawn
+  shieldTimer: 0,    // seconds of damage immunity left
+  boostTimer: 0,     // seconds of active speed boost left
+};
+
+// Somewhere legal to drop a car in: on an intersection (never blocked by
+// buildings or parked cars), clear of anything solid, and not right on top of
+// another player. Randomised so every respawn is a fresh corner of the city.
+function clearOfSolids(x, y, pad) {
+  for (const s of solids) {
+    if (x + pad > s.x && x - pad < s.x + s.w && y + pad > s.y && y - pad < s.y + s.h) return false;
+  }
+  return true;
+}
+
+function randomItem() {
+  let total = 0;
+  for (const k of ITEMS) total += ITEM_WEIGHTS[k] || 1;
+  let roll = rng() * total;
+  for (const k of ITEMS) {
+    roll -= ITEM_WEIGHTS[k] || 1;
+    if (roll <= 0) return k;
+  }
+  return 'boost';
+}
+
+// Age the boxes and collect any we are sitting on.
+function updateBoxes(dt) {
+  for (const b of boxes) {
+    if (!b.active) {
+      b.timer -= dt;
+      if (b.timer <= 0) { b.active = true; b.spin = rng() * 6.28; }
+      continue;
+    }
+    b.spin += dt * 1.6;
+    if (car.wreckTimer > 0) continue;
+    if (Math.hypot(car.x - b.x, car.y - b.y) > BOX_RADIUS) continue;
+    // a weapon is always worth taking; an ability needs a free slot
+    const kind = b.kind || randomItem();
+    // Weapons arm you on the spot and repairs patch you up on the spot;
+    // everything else waits in the item slot to be used.
+    if (isWeapon(kind) && kind !== 'gun') {
+      giveGun(kind);
+    } else if (kind === 'repair') {
+      if (car.damage <= 0) continue;   // already pristine: leave it for later
+      car.damage = Math.max(0, car.damage - 0.5);
+      addSparks(b.x, b.y, 14, ITEM_INFO.repair.color, 220);
+    } else {
+      if (car.item) continue;          // item slot full: leave the box alone
+      car.item = kind;
+    }
+    b.active = false;
+    b.timer = BOX_RESPAWN;
+    addSparks(b.x, b.y, 10, (ITEM_INFO[kind] || {}).color || '#fff', 200);
+    send({ t: 'item', id: b.id, kind });
+    playPickup();
+  }
+}
+
+function shuffleSpots(spots) {
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    const t = spots[i]; spots[i] = spots[j]; spots[j] = t;
+  }
+  return spots;
+}
+
+function findSpawn() {
+  // Inner intersections first. The outermost ring is against the barrier, and
+  // the corners especially are a trap: you start wedged into two walls with
+  // nowhere to build speed.
+  const inner = [], outer = [];
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      const spot = { x: i * STEP + ROAD / 2, y: j * STEP + ROAD / 2 };
+      const onEdge = (i === 0 || i === N || j === 0 || j === N);
+      (onEdge ? outer : inner).push(spot);
+    }
+  }
+  shuffleSpots(inner);
+  shuffleSpots(outer);
+
+  // take the first clear spot that is not right on top of another player,
+  // preferring the inside, then settling for anything but a corner
+  const corners = new Set([0, N]);
+  const open = (s) => clearOfSolids(s.x, s.y, 46);
+  const lonely = (s) => {
+    for (const p of NET.peers.values()) {
+      if (Math.hypot(p.x - s.x, p.y - s.y) < 260) return false;
+    }
+    return true;
+  };
+
+  for (const s of inner) if (open(s) && lonely(s)) return s;
+  for (const s of outer) if (open(s) && lonely(s)) return s;
+  for (const s of inner) if (open(s)) return s;
+  for (const s of outer) if (open(s)) return s;
+
+  // nothing clear anywhere: take any inner spot rather than a corner
+  if (inner.length) return inner[0];
+  return { x: ROAD / 2, y: ROAD / 2 };
+}
+
+function respawn() {
+  const s = findSpawn();
+  car.x = s.x;
+  car.y = s.y;
+  // face down one of the roads rather than an arbitrary angle
+  car.a = (Math.floor(rng() * 4) * Math.PI) / 2;
+  car.vx = car.vy = 0;
+  car.damage = 0;
+  car.wreckTimer = 0;
+  car.braking = false;
+  car.lastHitBy = null;
+  car.item = null;
+  car.shieldTimer = 0;
+  car.boostTimer = 0;
+  resetGuns();
+  // upgrades survive a wreck; only the very first spawn creates them
+  if (!car.upgrades) car.upgrades = { engine: 0, armour: 0, nitro: 0, tyres: 0, guns: 0 };
+  smoke.length = 0;
+  skids.length = 0;
+  cam.x = car.x; cam.y = car.y;
+}
+respawn();
+
+// `car.weapon` and `car.ammo` still read and write the active slot, so the
+// rest of the game (and the tests) can keep using the simple spelling.
+Object.defineProperty(car, 'weapon', {
+  get: () => currentGun().kind,
+  set: (k) => { const g = currentGun(); if (g) g.kind = k; },
+});
+Object.defineProperty(car, 'ammo', {
+  get: () => currentGun().ammo,
+  set: (v) => { const g = currentGun(); if (g) g.ammo = v; },
+});
+
+const ACCEL = 430;
+const BRAKE = 780;
+const REVERSE = 190;
+const DRAG = 0.9;
+const GRIP = 7.5;
+const DRIFT_GRIP = 2.2;
+const STEER = 3.1;
+const MAX_SPEED = 640;
+const DRIFT_SPEED_CAP = MAX_SPEED * 1.18;
+const BOOST_ACCEL = 900;     // extra push while a boost is running
+const BOOST_TOP = 1.45;      // and how far past normal top speed it will go
+const IMPACT_FREE = 200;
+const IMPACT_SCALE = 800;
+const RADIUS = 17;
+const CAR_HALF_W = 11, CAR_HALF_L = 21;
+
+// =====================================================================
+// input
+// =====================================================================
+const keys = Object.create(null);
+let muted = false;
+
+// ---- touch controls: on-screen pads drive the same keys the keyboard does,
+// so there is only one code path. Buttons use pointer events so a finger
+// sliding off still releases, and each button tracks its own pointer id.
+const touchKeys = Object.create(null);   // key -> set of active pointer ids
+let touchActive = false;
+
+function initTouchControls() {
+  const pad = document.getElementById('touch');
+  if (!pad) return;
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const hasTouch = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+  if (!coarse && !hasTouch) return;
+
+  // Brief highlight so a tap registers visually even when there is no effect,
+  // e.g. pressing USE with nothing held.
+  const flashButton = (btn) => {
+    btn.classList.add('held');
+    setTimeout(() => btn.classList.remove('held'), 140);
+  };
+
+  touchActive = true;
+  document.body.classList.add('touch');
+  pad.hidden = false;
+
+  // the keyboard legend is noise on a touch device, and it sits under the
+  // left thumb cluster
+  const help = document.getElementById('help');
+  if (help) help.style.display = 'none';
+
+  const press = (key, id) => {
+    if (!touchKeys[key]) touchKeys[key] = new Set();
+    touchKeys[key].add(id);
+    keys[key] = true;
+  };
+  const release = (key, id) => {
+    const set = touchKeys[key];
+    if (!set) return;
+    set.delete(id);
+    if (set.size === 0) {
+      keys[key] = false;
+      delete touchKeys[key];
+    }
+  };
+
+  // ---- movable controls
+  // Dragging any button past a few pixels moves it instead of pressing it, so
+  // a tap still drives and a deliberate drag rearranges. The new spot is
+  // remembered per device.
+  const PAD_KEY = 'leonida.pads';
+  const DRAG_PX = 14;
+  let padOffsets = {};
+  try {
+    const raw = localStorage.getItem(PAD_KEY);
+    if (raw) { const p = JSON.parse(raw); if (p && typeof p === 'object') padOffsets = p; }
+  } catch (err) { padOffsets = {}; }
+
+  const savePadOffsets = () => {
+    try { localStorage.setItem(PAD_KEY, JSON.stringify(padOffsets)); } catch (err) { /* not fatal */ }
+  };
+
+  const placeButton = (btn) => {
+    const o = padOffsets[btn.dataset.id] || { dx: 0, dy: 0 };
+    btn.style.setProperty('--dx', Math.round(o.dx) + 'px');
+    btn.style.setProperty('--dy', Math.round(o.dy) + 'px');
+  };
+
+  // keep a button fully on screen after a drag, however the viewport changed
+  const clampButton = (btn) => {
+    const o = padOffsets[btn.dataset.id] || { dx: 0, dy: 0 };
+    const r = btn.getBoundingClientRect();
+    let fixX = 0, fixY = 0;
+    const pad = 4;
+    if (r.left < pad) fixX = pad - r.left;
+    else if (r.right > window.innerWidth - pad) fixX = window.innerWidth - pad - r.right;
+    if (r.top < pad) fixY = pad - r.top;
+    else if (r.bottom > window.innerHeight - pad) fixY = window.innerHeight - pad - r.bottom;
+    if (fixX || fixY) {
+      o.dx += fixX; o.dy += fixY;
+      padOffsets[btn.dataset.id] = o;
+      placeButton(btn);
+    }
+  };
+
+  for (const btn of pad.querySelectorAll('.tbtn')) {
+    const key = btn.dataset.key;
+    const isFire = btn.dataset.fire === '1';
+    const isUse = btn.dataset.use === '1';
+    const isSwap = btn.dataset.swap === '1';
+    const isMenu = btn.dataset.menu === '1';
+    const isReset = btn.dataset.reset === '1';
+    const isFs = btn.dataset.fs === '1';
+    const isShop = btn.dataset.shop === '1';
+
+    // restore wherever this button was left last time
+    placeButton(btn);
+
+    let dragging = false;
+    let startX = 0, startY = 0, baseDx = 0, baseDy = 0;
+
+    const releaseControl = () => {
+      if (isFire) firing = false;
+      else if (!isUse && !isSwap && !isMenu && key) release(key, btn.__pid);
+    };
+
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (isMenu) { toggleNetUI(); flashButton(btn); return; }
+      if (isReset) { if (window.__resetPads) window.__resetPads(); flashButton(btn); return; }
+      if (isFs) { toggleFullscreen(); flashButton(btn); return; }
+      if (isShop) { toggleShop(); flashButton(btn); return; }
+      btn.setPointerCapture && btn.setPointerCapture(e.pointerId);
+      btn.__pid = e.pointerId;
+      dragging = false;
+      startX = e.clientX; startY = e.clientY;
+      const o = padOffsets[btn.dataset.id] || { dx: 0, dy: 0 };
+      baseDx = o.dx; baseDy = o.dy;
+      btn.classList.add('held');
+      if (isFire) { firing = true; startAudio(); }
+      else if (isUse) { useItem(); flashButton(btn); }
+      else if (isSwap) { switchGun(1); flashButton(btn); }
+      else if (isMenu) { toggleNetUI(); flashButton(btn); }
+      else if (key) press(key, e.pointerId);
+    });
+
+    btn.addEventListener('pointermove', (e) => {
+      if (!btn.hasPointerCapture || !btn.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!dragging && Math.hypot(dx, dy) > DRAG_PX) {
+        // past the threshold: this is a move, not a press. Let go of the
+        // control so a drag never leaves the throttle stuck on.
+        dragging = true;
+        releaseControl();
+        btn.classList.remove('held');
+        btn.classList.add('moving');
+      }
+      if (!dragging) return;
+      padOffsets[btn.dataset.id] = { dx: baseDx + dx, dy: baseDy + dy };
+      placeButton(btn);
+      // Keep it on screen during the drag, not just after it: letting go
+      // off the edge is how a control goes missing.
+      clampButton(btn);
+    });
+
+    const finish = (e) => {
+      if (dragging) {
+        btn.classList.remove('moving');
+        clampButton(btn);
+        savePadOffsets();
+      }
+      releaseControl();
+    };
+    btn.addEventListener('pointerup', finish);
+    btn.addEventListener('pointercancel', finish);
+    btn.addEventListener('lostpointercapture', finish);
+  }
+
+  // a way back to the shipped layout
+  window.__resetPads = () => {
+    padOffsets = {};
+    try { localStorage.removeItem(PAD_KEY); } catch (err) { /* ignore */ }
+    for (const btn of pad.querySelectorAll('.tbtn')) placeButton(btn);
+  };
+
+  for (const btn of pad.querySelectorAll('.tbtn')) {
+    // stop the page scrolling or zooming under a thumb
+    btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  // releasing every button when the page loses focus stops stuck throttle
+  addEventListener('blur', () => {
+    for (const key of Object.keys(touchKeys)) { touchKeys[key].clear(); keys[key] = false; }
+    firing = false;
+    for (const btn of pad.querySelectorAll('.tbtn.held')) btn.classList.remove('held');
+  });
+}
+
+addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+  if (k === 'r') respawn();
+  if (k === 'm') muted = !muted;
+  if (k === 'f') showFps = !showFps;
+  if (k === 'p') toggleNetUI();
+  if (k === 'j') firing = true;
+  if (k === 'e') useItem();
+  if (k === 'q') switchGun(1);
+  if (k === 'b') toggleShop();
+  if (k >= '1' && k <= '9') {
+    const i = Number(k) - 1;
+    if (car.guns && i < car.guns.length) car.gunIndex = i;
+  }
+  startAudio();
+  if (k === 'n' && touchActive) document.getElementById('touch').hidden = !document.getElementById('touch').hidden;
+});
+addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  if (k === 'j') firing = false;
+});
+addEventListener('blur', () => {
+  for (const k in keys) keys[k] = false;
+  firing = false;
+});
+
+// mouse fire: hold the left button. Clicks on the UI panels are left alone.
+addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  if (e.target && e.target.closest && e.target.closest('#net')) return;
+  firing = true;
+  startAudio();
+});
+addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
+addEventListener('contextmenu', (e) => { if (e.target === cvs) e.preventDefault(); });
+
+const throttle = () => (keys['w'] || keys['arrowup'] ? 1 : 0) -
+                       (keys['s'] || keys['arrowdown'] ? 1 : 0);
+const steering = () => (keys['a'] || keys['arrowleft'] ? 1 : 0) -
+                      (keys['d'] || keys['arrowright'] ? 1 : 0);
+const handbrake = () => !!keys[' '];
+
+// =====================================================================
+// audio
+// =====================================================================
+let audio = null, osc = null, oscGain = null;
+
+function startAudio() {
+  if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    audio = new AC();
+    osc = audio.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 60;
+    const filter = audio.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 420;
+    oscGain = audio.createGain();
+    oscGain.gain.value = 0;
+    osc.connect(filter).connect(oscGain).connect(audio.destination);
+    osc.start();
+  } catch (err) {
+    audio = null;
+  }
+}
+
+function updateAudio() {
+  if (!audio || muted) return;
+  const t = audio.currentTime;
+  osc.frequency.setTargetAtTime(48 + car.engine * 150, t, 0.06);
+  oscGain.gain.setTargetAtTime(car.wreckTimer > 0 ? 0 : 0.045, t, 0.1);
+}
+
+// Gunfire and the bang are short bursts of filtered noise, synthesised rather
+// than loaded, so the page stays a single file with no assets.
+function playNoise(dur, freq, gain, type) {
+  if (!audio || muted) return;
+  try {
+    const now = audio.currentTime;
+    const samples = Math.max(1, Math.floor(audio.sampleRate * dur));
+    const buf = audio.createBuffer(1, samples, audio.sampleRate);
+    const ch = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < samples; i++) {
+      const white = Math.random() * 2 - 1;
+      // one-pole lowpass, then a linear decay envelope
+      last = last * 0.6 + white * 0.4;
+      ch[i] = last * (1 - i / samples);
+    }
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    const f = audio.createBiquadFilter();
+    f.type = type || 'lowpass';
+    f.frequency.value = freq;
+    const g = audio.createGain();
+    g.gain.value = gain;
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(now);
+  } catch (err) { /* audio is a bonus, never a blocker */ }
+}
+
+function playShot() { playNoise(0.09, 2600, 0.16, 'bandpass'); }
+function playPickup() { playNoise(0.18, 900, 0.22, 'bandpass'); }
+function playSquash() { playNoise(0.16, 320, 0.28, 'lowpass'); }
+function playCoin() { playNoise(0.09, 2600, 0.16, 'bandpass'); }
+function playBang() { playNoise(0.75, 380, 0.5, 'lowpass'); }
+function playNuke() { playNoise(2.0, 220, 0.6, 'lowpass'); playNoise(1.2, 1600, 0.3, 'bandpass'); }
+
+// =====================================================================
+// particles
+// =====================================================================
+const sparks = [];      // {x,y,vx,vy,life,size,color}
+const bangs = [];       // expanding shockwave rings
+
+function addSmoke(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    if (smoke.length > 150) break;
+    smoke.push({
+      x: x + (rng() - 0.5) * 7,
+      y: y + (rng() - 0.5) * 7,
+      life: 1,
+      size: 2.5 + rng() * 3.5,
+      drift: (rng() - 0.5) * 0.6,
+    });
+  }
+}
+
+function addSparks(x, y, n, color, speed = 260) {
+  for (let i = 0; i < n; i++) {
+    if (sparks.length > 220) break;
+    const a = rng() * Math.PI * 2;
+    const v = speed * (0.3 + rng() * 0.7);
+    sparks.push({
+      x, y,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v,
+      life: 1,
+      size: 1.5 + rng() * 2,
+      color: color || (rng() < 0.5 ? '#ffd166' : '#ff8a3d'),
+    });
+  }
+}
+
+// The bang: a bright flash, a shockwave ring, and a lot of debris. Sized to
+// the moment so a wreck reads clearly even in the corner of the screen.
+// A car blowing up is a nudge, not a death sentence: it shoves you and hurts,
+// but you have to already be badly damaged for a neighbour's wreck to finish
+// you. The nuke is the big one, and it passes its own radius and power in.
+// Napalm leaves fire on the ground. It burns whatever stands in it, and it is
+// relayed so everyone sees and feels the same pool of flame.
+const fires = [];
+const FIRE_TICK = 0.35;      // seconds between bites of damage
+
+function addFire(x, y, r, life, silent) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (fires.length > 220) return null;
+  const f = { x, y, r: r || 30, life: life || 6, tick: FIRE_TICK, seed: rng() * 6.28 };
+  fires.push(f);
+  if (!silent) send({ t: 'burn', x: Math.round(x), y: Math.round(y), r: Math.round(f.r), life: +f.life.toFixed(1) });
+  return f;
+}
+
+function updateFires(dt) {
+  for (let i = fires.length - 1; i >= 0; i--) {
+    const f = fires[i];
+    f.life -= dt;
+    if (f.life <= 0) { fires.splice(i, 1); continue; }
+    f.tick -= dt;
+    if (f.tick > 0) continue;
+    f.tick = FIRE_TICK;
+    // us
+    if (car.wreckTimer <= 0 && Math.hypot(car.x - f.x, car.y - f.y) < f.r) {
+      applyDamage(car.x, car.y, 0.05, 1);
+    }
+    // and anyone walking through it
+    for (const p of peds) {
+      if (!p.alive) continue;
+      if (Math.hypot(p.x - f.x, p.y - f.y) < f.r) killPed(p, true);
+    }
+  }
+}
+
+const BLAST_RADIUS = 115;
+const BLAST_POWER = 0.22;    // damage at the centre, tapering to nothing
+
+// Set while we are applying a blast that arrived from another player, so our
+// own wreck explosion does not broadcast a fresh blast and echo round the
+// lobby. Cleared as soon as the incoming blast has been fully applied.
+let suppressBlast = false;
+
+// An explosion hurts whoever is standing in it, on top of wrecking the
+// scenery. The harm is applied locally by each player to their own car, and
+// the blast is relayed so everyone agrees on where it was. `silent` stops a
+// relayed blast from being relayed again: that is what keeps a chain of
+// explosions from echoing round the lobby forever.
+function explode(x, y, opts) {
+  const o = opts || {};
+  const radius = o.radius || BLAST_RADIUS;
+  const power = o.power === undefined ? BLAST_POWER : o.power;
+  const owner = o.owner === undefined ? (NET.id || 0) : o.owner;
+
+  bangs.push({ x, y, life: 1, size: 26 });
+  bangs.push({ x, y, life: 1, size: 60 });
+  addSparks(x, y, 60, null, 620);
+  addSmoke(x, y, 26);
+  addSmoke(x + (rng() - 0.5) * 40, y + (rng() - 0.5) * 40, 18);
+  shakeAt(x, y, 18);
+  blastNearby(x, y, radius, o.envPower === undefined ? 7 : o.envPower);
+  playBang();
+
+  if (o.noHarm) return;
+
+  // our own injuries, if we are inside the fireball
+  const d = Math.hypot(car.x - x, car.y - y);
+  if (d < radius && car.wreckTimer <= 0) {
+    const bite = power * (1 - d / radius);
+    if (bite > 0.01) {
+      if (owner && owner !== NET.id) car.lastHitBy = owner;
+      applyDamage(car.x, car.y, bite, 8);
+      const push = 1 - d / radius;
+      // A blast centred exactly on us has no direction to push along, so fall
+      // back to the way the car is facing rather than dividing by zero.
+      let dx = car.x - x, dy = car.y - y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1) { dx = Math.cos(car.a); dy = Math.sin(car.a); }
+      else { dx /= len; dy /= len; }
+      car.vx += dx * 320 * push;
+      car.vy += dy * 320 * push;
+    }
+  }
+
+  if (!o.silent && !suppressBlast) {
+    send({ t: 'blast', x: Math.round(x), y: Math.round(y),
+           r: Math.round(radius), p: +power.toFixed(2), own: owner });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = smoke.length - 1; i >= 0; i--) {
+    const p = smoke[i];
+    p.x += p.drift * 30 * dt;
+    p.y += p.drift * 30 * dt;
+    p.life -= dt * 1.1;
+    if (p.life <= 0) smoke.splice(i, 1);
+  }
+  for (let i = skids.length - 1; i >= 0; i--) {
+    skids[i].life -= dt * 0.06;
+    if (skids[i].life <= 0) skids.splice(i, 1);
+  }
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const p = sparks[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx -= p.vx * 2.6 * dt;      // air drag
+    p.vy -= p.vy * 2.6 * dt;
+    p.life -= dt * 1.9;
+    if (p.life <= 0) sparks.splice(i, 1);
+  }
+  for (let i = bangs.length - 1; i >= 0; i--) {
+    const b = bangs[i];
+    b.size += 260 * dt;
+    b.life -= dt * 1.5;
+    if (b.life <= 0) bangs.splice(i, 1);
+  }
+}
+
+// =====================================================================
+// guns
+//
+// A pair of forward-firing guns on the nose. Bullets are simulated locally:
+// they inherit some of the car's velocity so they stream properly when you
+// are moving, and they stop on the first solid they touch. A hit on a remote
+// car is reported to that player, keeping the same "each side owns its own
+// car" rule the rest of the netcode uses.
+// =====================================================================
+const bullets = [];
+const BULLET_LIFE = 0.75;
+let fireCooldown = 0;
+let lastFireReport = 0;
+const FIRE_REPORT_MS = 33;   // report gunfire at most 30 times a second
+let shakeAmount = 0;
+let firing = false;
+const WRECK_TIME = 3.0;      // seconds the death screen is up
+
+function resetGuns() {
+  car.guns = [{ kind: 'gun', ammo: Infinity }];
+  car.gunIndex = 0;
+}
+
+const currentGun = () => car.guns[car.gunIndex] || car.guns[0];
+
+// Picking up a gun you already carry tops it up instead of taking a slot.
+function giveGun(kind) {
+  const w = WEAPONS[kind];
+  if (!w || kind === 'gun') return;
+  const cap = w.ammo * 3;                 // keep someone from hoarding forever
+  const at = car.guns.findIndex((g) => g.kind === kind);
+  if (at >= 0) {
+    car.guns[at].ammo = Math.min(cap, car.guns[at].ammo + w.ammo);
+    car.gunIndex = at;
+  } else {
+    car.guns.push({ kind, ammo: w.ammo });
+    car.gunIndex = car.guns.length - 1;   // switch to what you just picked up
+  }
+}
+
+// Cycle the arsenal. A one-gun arsenal has nothing to cycle to.
+function switchGun(dir) {
+  if (!car.guns || car.guns.length < 2) return false;
+  car.gunIndex = (car.gunIndex + dir + car.guns.length) % car.guns.length;
+  return true;
+}
+
+function dropEmptyGun() {
+  const g = currentGun();
+  if (g.ammo > 0) return;
+  if (car.guns.length === 1) { g.kind = 'gun'; g.ammo = Infinity; return; }
+  car.guns.splice(car.gunIndex, 1);
+  car.gunIndex = (car.gunIndex - 1 + car.guns.length) % car.guns.length;
+}
+
+function fire() {
+  if (fireCooldown > 0) return;
+  if (car.wreckTimer > 0) return;
+
+  const slot = currentGun();
+  const w = WEAPONS[slot.kind] || WEAPONS.gun;
+  if (slot.ammo <= 0) { dropEmptyGun(); return; }
+  fireCooldown = w.interval;
+  const firedWith = slot.kind;   // report this, even if the ammo runs out below
+
+  const c = Math.cos(car.a), s = Math.sin(car.a);
+  const n = w.count;
+  for (let i = 0; i < n; i++) {
+    // spread the shots evenly either side of the nose; a two-shot gun comes
+    // out as the familiar pair of muzzles
+    const offset = n === 1 ? 0 : (i / (n - 1) - 0.5) * 2;
+    const jitter = (rng() - 0.5) * w.spread;
+    const ang = car.a + offset * w.spread + jitter;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const side = n === 2 ? (i === 0 ? -6 : 6) : 0;
+    const mx = car.x + c * (CAR_HALF_L + 4) - s * side;
+    const my = car.y + s * (CAR_HALF_L + 4) + c * side;
+    bullets.push({
+      x: mx, y: my,
+      x0: mx, y0: my,                 // previous position, for the tracer
+      vx: ca * w.speed + car.vx * 0.45,
+      vy: sa * w.speed + car.vy * 0.45,
+      life: w.life || BULLET_LIFE,
+      dmg: gunDamageNow(w.dmg),
+      blast: !!w.blast,
+      blastR: w.blastR,
+      blastP: w.blastP,
+      envPower: w.envPower,
+      homing: w.homing || 0,
+      trail: !!w.trail,
+      speed: w.speed,
+      tracer: w.tracer,
+      // Liero-style behaviour flags
+      bounce: w.bounce || 0,
+      fuse: !!w.fuse,
+      pierce: !!w.pierce,
+      split: w.split || 0,
+      splitR: w.splitR || 110,
+      fire: w.fire || 0,
+      fireR: w.fireR || 28,
+      dmgBase: w.dmg,
+    });
+  }
+  if (slot.ammo !== Infinity) {
+    slot.ammo -= 1;
+    if (slot.ammo <= 0) dropEmptyGun();
+  }
+  addSparks(car.x + c * (CAR_HALF_L + 8), car.y + s * (CAR_HALF_L + 8), 3, '#ffe9a8', 180);
+  shakeAmount = Math.min(9, shakeAmount + 1.6);
+  playShot();
+  // Tell everyone else, so their screens show the tracers. Hits stay
+  // authoritative with the shooter (the 'hit' message), so remote bullets
+  // are purely cosmetic.
+  // One message per shot would be 240 a second at the SMG's rate, which would
+  // swamp the relay. The rounds themselves are local and full rate; the report
+  // to other players is throttled to something the wire can carry.
+  const now = performance.now();
+  if (now - lastFireReport > FIRE_REPORT_MS) {
+    lastFireReport = now;
+    send({ t: 'fire', x: Math.round(car.x), y: Math.round(car.y), a: +car.a.toFixed(3), w: firedWith,
+           vx: Math.round(car.vx), vy: Math.round(car.vy) });
+  }
+}
+
+// Find whoever is closest to a point, for the homing rounds to chase.
+function nearestPeer(x, y) {
+  let best = null, bestD = Infinity;
+  for (const p of NET.peers.values()) {
+    if (p.dead) continue;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+// Turn `from` toward `to` by at most `maxStep` radians.
+function turnToward(from, to, maxStep) {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return from + clamp(d, -maxStep, maxStep);
+}
+
+// Called whenever a round ends: it may leave burning ground, burst into
+// bomblets, or both.
+function spawnChildren(b) {
+  const n = b.split | 0;
+  if (!n) return;
+  const base = Math.atan2(b.vy, b.vx);
+  for (let i = 0; i < n; i++) {
+    const a = base + (i / Math.max(1, n - 1) - 0.5) * 2.2 + (rng() - 0.5) * 0.3;
+    const sp = 260 + rng() * 200;
+    bullets.push({
+      x: b.x, y: b.y, x0: b.x, y0: b.y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 0.5 + rng() * 0.5,
+      dmg: (b.dmgBase || 0.1) * 0.7,
+      blast: true, blastR: 70, blastP: 0.12, envPower: 2,
+      tracer: b.tracer,
+    });
+  }
+}
+
+function bulletEnds(b) {
+  if (b.fire) addFire(b.x, b.y, b.fireR, b.fire, false);
+  if (b.blast) {
+    explode(b.x, b.y, {
+      silent: true,
+      radius: b.blastR || 90,
+      power: b.blastP === undefined ? 0.12 : b.blastP,
+      envPower: b.envPower === undefined ? 3 : b.envPower,
+      owner: NET.id || 0,
+    });
+  }
+  if (b.split) spawnChildren(b);
+}
+
+function updateBullets(dt) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x0 = b.x; b.y0 = b.y;
+
+    // a homing round swings its nose toward the nearest player, but only so
+    // fast: you can still outrun one by turning hard
+    if (b.homing > 0 && !b.ghost) {
+      const target = nearestPeer(b.x, b.y);
+      if (target) {
+        const want = Math.atan2(target.y - b.y, target.x - b.x);
+        const ang = turnToward(Math.atan2(b.vy, b.vx), want, b.homing * dt);
+        const sp = b.speed || Math.hypot(b.vx, b.vy);
+        b.vx = Math.cos(ang) * sp;
+        b.vy = Math.sin(ang) * sp;
+      }
+    }
+
+    if (b.trail && Math.random() < 0.5) {
+      addSmoke(b.x, b.y, 1);
+    }
+    if (b.homing > 0 && Math.random() < 0.35) {
+      addSparks(b.x, b.y, 1, b.tracer || '#c9ffe0', 90);
+    }
+
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+
+    if (b.life <= 0) {
+      // a fused round goes off where it ran out, rather than fizzling
+      if (b.blast || b.fire || b.split) bulletEnds(b);
+      addSparks(b.x, b.y, 3, null, 120);
+      bullets.splice(i, 1);
+      continue;
+    }
+    if (b.ghost) continue;      // remote bullets are decoration
+
+    // world barrier
+    if (b.x < 0 || b.y < 0 || b.x > WORLD || b.y > WORLD) {
+      addSparks(b.x, b.y, 4, null, 160);
+      if (b.blast || b.fire || b.split) bulletEnds(b);
+      bullets.splice(i, 1);
+      continue;
+    }
+
+    // buildings, parked cars, palms
+    let hit = false;
+    for (const s of solids) {
+      if (s.dead) continue;
+      if (b.x < s.x || b.x > s.x + s.w || b.y < s.y || b.y > s.y + s.h) continue;
+      if (typeof s.hp === 'number') damageSolid(s, b.blast ? 5 : (b.pierce ? 3 : 1));
+      hit = true;
+      // a railgun round carries on through; a bouncy one comes off the wall
+      if (b.pierce) break;
+      if (b.bounce > 0) {
+        b.bounce -= 1;
+        // A round that has already stepped inside the box has no meaningful
+        // "nearest point", so the face is found from the shallowest overlap
+        // instead: that is the side it came in through.
+        const left = b.x - s.x, right = s.x + s.w - b.x;
+        const top = b.y - s.y, bot = s.y + s.h - b.y;
+        const m = Math.min(left, right, top, bot);
+        let ux = 0, uy = 0;
+        if (m === left) { ux = -1; b.x = s.x - 2; }
+        else if (m === right) { ux = 1; b.x = s.x + s.w + 2; }
+        else if (m === top) { uy = -1; b.y = s.y - 2; }
+        else { uy = 1; b.y = s.y + s.h + 2; }
+        const dot = b.vx * ux + b.vy * uy;
+        b.vx -= 2 * dot * ux;
+        b.vy -= 2 * dot * uy;
+        b.vx *= 0.8; b.vy *= 0.8;
+        addSparks(b.x, b.y, 5, null, 180);
+        hit = false;
+        break;
+      }
+      addSparks(b.x, b.y, 6, null, 220);
+      bulletEnds(b);
+      break;
+    }
+    if (hit) { bullets.splice(i, 1); continue; }
+
+    // pedestrians caught in the open
+    let pedHit = false;
+    for (const pd of peds) {
+      if (!pd.alive) continue;
+      if (Math.abs(b.x - pd.x) > 11 || Math.abs(b.y - pd.y) > 11) continue;
+      addSparks(b.x, b.y, 6, '#b3241c', 200);
+      killPed(pd, false);      // and they drop their money for the shooter
+      if (!b.pierce) { bullets.splice(i, 1); pedHit = true; }
+      break;
+    }
+    if (pedHit) continue;
+
+    // remote players
+    for (const p of NET.peers.values()) {
+      const dx = b.x - p.x, dy = b.y - p.y;
+      if (Math.abs(dx) > 30 || Math.abs(dy) > 30) continue;
+      addSparks(b.x, b.y, 8, '#ff8a3d', 260);
+      send({ t: 'hit', to: p.id, dmg: typeof b.dmg === 'number' ? b.dmg : 0.055, vx: Math.round(b.vx), vy: Math.round(b.vy) });
+      if (b.blast || b.fire) bulletEnds(b);
+      if (!b.pierce) { bullets.splice(i, 1); }
+      break;
+    }
+  }
+}
+
+function drawBullets() {
+  if (!bullets.length) return;
+  ctx.lineCap = 'round';
+  for (const b of bullets) {
+    ctx.strokeStyle = b.tracer || 'rgba(255,238,170,0.85)';
+    ctx.lineWidth = b.blast ? 3.4 : 2.2;
+    ctx.beginPath();
+    ctx.moveTo(b.x0, b.y0);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  for (const b of bullets) {
+    ctx.beginPath();
+    ctx.moveTo(b.x0, b.y0);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+}
+
+function drawSparks() {
+  for (const p of sparks) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBangs() {
+  if (!bangs.length) return;
+  // drawn after the tint so a wreck flashes instead of being darkened
+  for (const b of bangs) {
+    const a = Math.max(0, b.life);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(255,214,140,${0.75 * a})`;
+    ctx.lineWidth = 6 * a + 1;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.drawImage(glowSprite('#ffb347'), b.x - b.size * 1.3, b.y - b.size * 1.3, b.size * 2.6, b.size * 2.6);
+    ctx.restore();
+  }
+}
+
+// One place that wrecks the car, so every damage path gets the same bang.
+function wreckCar() {
+  if (car.wreckTimer > 0) return;
+  car.wreckTimer = WRECK_TIME;
+  car.vx = car.vy = 0;
+  explode(car.x, car.y);
+  send({ t: 'bang', x: Math.round(car.x), y: Math.round(car.y) });
+  // 'by' is the last player who hit us, or null if we wrapped it round a tree
+  send({ t: 'kill', by: typeof car.lastHitBy === 'number' ? car.lastHitBy : null,
+         x: Math.round(car.x), y: Math.round(car.y) });
+}
+
+// A distant blast should rumble, not shove the camera off the car.
+function useItem() {
+  const kind = car.item;
+  if (!kind || car.wreckTimer > 0) return;
+  car.item = null;
+  if (kind === 'boost') {
+    car.boostTimer = boostTimeNow();
+    shakeAt(car.x, car.y, 6);
+  } else if (kind === 'shield') {
+    car.shieldTimer = 8;
+  } else if (kind === 'repair') {
+    car.damage = Math.max(0, car.damage - 0.5);
+    addSparks(car.x, car.y, 12, '#4bd07a', 200);
+  } else if (kind === 'mine') {
+    dropMine();
+  } else if (kind === 'rpg' || kind === 'missile') {
+    // a rocket: a pointed nose on a tube, with fins at the back
+    ctx.fillStyle = '#e8eef7';
+    ctx.beginPath();
+    ctx.moveTo(0.95 * r, 0);
+    ctx.lineTo(0.1 * r, -0.34 * r);
+    ctx.lineTo(-0.75 * r, -0.34 * r);
+    ctx.lineTo(-0.75 * r, 0.34 * r);
+    ctx.lineTo(0.1 * r, 0.34 * r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#e8eef7';
+    if (kind === 'missile') {
+      ctx.beginPath();
+      ctx.moveTo(-0.7 * r, -0.3 * r);
+      ctx.lineTo(-1.0 * r, -0.75 * r);
+      ctx.lineTo(-0.62 * r, -0.42 * r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-0.7 * r, 0.3 * r);
+      ctx.lineTo(-1.0 * r, 0.75 * r);
+      ctx.lineTo(-0.62 * r, 0.42 * r);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // the launcher tube the rocket sits in
+      ctx.fillRect(-0.95 * r, -0.55 * r, 0.5 * r, 0.24 * r);
+      ctx.fillRect(-0.95 * r, 0.31 * r, 0.5 * r, 0.24 * r);
+    }
+  } else if (kind === 'napalm' || kind === 'flame') {
+    // a flame nozzle with a jet of fire
+    ctx.fillStyle = '#e8eef7';
+    ctx.fillRect(-0.9 * r, -0.7 * r, 0.55 * r, 0.28 * r);
+    ctx.fillRect(-0.9 * r, 0.42 * r, 0.55 * r, 0.28 * r);
+    ctx.fillStyle = '#ff8a3d';
+    ctx.beginPath();
+    ctx.moveTo(-0.35 * r, 0);
+    ctx.lineTo(0.5 * r, -0.55 * r);
+    ctx.lineTo(0.95 * r, 0);
+    ctx.lineTo(0.5 * r, 0.55 * r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffd24a';
+    ctx.beginPath();
+    ctx.moveTo(-0.1 * r, 0);
+    ctx.lineTo(0.45 * r, -0.22 * r);
+    ctx.lineTo(0.45 * r, 0.22 * r);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'grenade') {
+    // a pineapple
+    ctx.fillStyle = '#7fa86a';
+    ctx.beginPath();
+    ctx.ellipse(0, 0.1 * r, 0.6 * r, 0.75 * r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2b3a24';
+    ctx.lineWidth = Math.max(1.4, 0.14 * r);
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-0.55 * r, i * 0.24 * r);
+      ctx.lineTo(0.55 * r, i * 0.24 * r);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#e8eef7';
+    ctx.fillRect(-0.12 * r, -1.0 * r, 0.24 * r, 0.3 * r);
+  } else if (kind === 'sniper' || kind === 'railgun') {
+    // a long barrel with a scope, the railgun with a charged core
+    ctx.fillStyle = '#e8eef7';
+    ctx.fillRect(-0.95 * r, -0.1 * r, 1.9 * r, 0.24 * r);
+    ctx.fillRect(-0.5 * r, -0.36 * r, 0.5 * r, 0.3 * r);
+    ctx.beginPath();
+    ctx.arc(-0.2 * r, -0.5 * r, 0.2 * r, 0, Math.PI * 2);
+    ctx.fill();
+    if (kind === 'railgun') {
+      ctx.fillStyle = '#c9a0ff';
+      ctx.fillRect(-0.95 * r, -0.05 * r, 1.9 * r, 0.14 * r);
+      ctx.beginPath();
+      ctx.arc(0.95 * r, 0.02 * r, 0.26 * r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (kind === 'minigun' || kind === 'cluster') {
+    // a rotary barrel cluster
+    ctx.fillStyle = '#e8eef7';
+    for (const dy of [-0.42, 0, 0.42]) ctx.fillRect(-0.9 * r, dy * r - 0.11 * r, 1.5 * r, 0.22 * r);
+    ctx.beginPath();
+    ctx.arc(-0.9 * r, 0, 0.45 * r, 0, Math.PI * 2);
+    ctx.fill();
+    if (kind === 'cluster') {
+      ctx.fillStyle = '#ffd7a1';
+      for (const [dx, dy] of [[0.85, -0.5], [0.95, 0], [0.85, 0.5]]) {
+        ctx.beginPath();
+        ctx.arc(dx * r, dy * r, 0.18 * r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (kind === 'smg' || kind === 'gun' || kind === 'shotgun' || kind === 'cannon') {
+    // a side-on gun, sized by type so they read differently at a glance
+    const long = kind === 'shotgun' ? 1.5 : kind === 'cannon' ? 1.25 : kind === 'smg' ? 0.8 : 1;
+    const thick = kind === 'cannon' ? 0.5 : kind === 'shotgun' ? 0.3 : 0.34;
+    ctx.fillStyle = '#e8eef7';
+    ctx.beginPath();
+    ctx.moveTo(-0.9 * r * long, -thick * r);
+    ctx.lineTo(0.62 * r * long, -thick * r * 0.6);
+    ctx.lineTo(0.62 * r * long, thick * r * 0.6);
+    ctx.lineTo(-0.9 * r * long, thick * r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#e8eef7';
+    ctx.fillRect(-0.18 * r * long, thick * r * 0.6, 0.3 * r, 0.55 * r);
+    if (kind === 'cannon') {
+      ctx.beginPath();
+      ctx.arc(0.66 * r * long, 0, 0.3 * r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (kind === 'nuke') {
+    armNuke(car.x, car.y, NET.id, false);
+    send({ t: 'nuke', x: Math.round(car.x), y: Math.round(car.y) });
+  }
+  send({ t: 'use', kind });
+}
+
+function shakeAt(x, y, amount) {
+  const d = Math.hypot(x - car.x, y - car.y);
+  const near = clamp(1 - d / 700, 0, 1);
+  shakeAmount = Math.min(26, shakeAmount + amount * near);
+}
+
+function applyDamage(x, y, amount, smokeN) {
+  // armour takes a slice off everything
+  amount = amount * damageScaleNow();
+  if (car.shieldTimer > 0) {
+    // the shield eats it: show the hit, take nothing
+    addSparks(x, y, 8, '#25e0ff', 220);
+    return;
+  }
+  car.damage = clamp(car.damage + amount, 0, 1);
+  if (smokeN) addSmoke(x, y, smokeN);
+  if (car.damage >= 1) wreckCar();
+}
+
+// Dropped mines: a hazard that blows up whoever drives into it, including
+// the player who left it if they loop back round.
+const mines = [];
+const MINE_LIFE = 25;
+const MINE_ARM = 0.8;        // grace period before your own mine can hurt you
+const MINE_RADIUS = 34;
+
+// =====================================================================
+// nukes
+//
+// Everyone gets the same warning and the same countdown, so the blast
+// lands at the same moment on every screen. Each client applies the
+// damage to its own car, which keeps the "you own your car" rule intact.
+// =====================================================================
+const nukes = [];
+const NUKE_FUSE = 2.6;       // seconds of warning before it goes off
+const NUKE_RADIUS = 640;     // how far the blast reaches
+let nukeFlash = 0;           // white-out, decays after detonation
+
+function armNuke(x, y, owner, silent) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  nukes.push({ x, y, t: NUKE_FUSE, owner: owner || 0 });
+}
+
+function detonateNuke(n) {
+  nukeFlash = 1;
+  shakeAmount = 26;
+  // the fireball itself, then the wide shockwave that flattens the district
+  explode(n.x, n.y, { radius: 260, power: 1, envPower: 40, owner: n.owner });
+  blastNearby(n.x, n.y, NUKE_RADIUS, 40);
+  // a wide skirt of debris and dust so the size of it reads
+  for (let i = 0; i < 24; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = Math.sqrt(rng()) * NUKE_RADIUS;
+    addSparks(n.x + Math.cos(a) * r, n.y + Math.sin(a) * r, 3, null, 340);
+  }
+  for (let i = 0; i < 14; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = Math.sqrt(rng()) * NUKE_RADIUS * 0.7;
+    addSmoke(n.x + Math.cos(a) * r, n.y + Math.sin(a) * r, 3);
+  }
+  playNuke();
+
+  // the rest of the nuke radius, outside the fireball
+  const d = Math.hypot(car.x - n.x, car.y - n.y);
+  if (d < NUKE_RADIUS && d >= 260 && car.wreckTimer <= 0) {
+    const bite = 0.95 * (1 - d / NUKE_RADIUS);
+    if (bite > 0) {
+      if (n.owner && n.owner !== NET.id) car.lastHitBy = n.owner;
+      applyDamage(car.x, car.y, bite, 10);
+      const push = 1 - d / NUKE_RADIUS;
+      car.vx += (car.x - n.x) * 2.2 * push;
+      car.vy += (car.y - n.y) * 2.2 * push;
+    }
+  }
+}
+
+function updateNukes(dt) {
+  if (nukeFlash > 0) nukeFlash = Math.max(0, nukeFlash - dt * 1.5);
+  for (let i = nukes.length - 1; i >= 0; i--) {
+    const n = nukes[i];
+    n.t -= dt;
+    if (n.t <= 0) { nukes.splice(i, 1); detonateNuke(n); }
+  }
+}
+
+function drawNukes() {
+  for (const n of nukes) {
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 90);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(255,90,60,${(0.35 + 0.35 * pulse).toFixed(2)})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, NUKE_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([12, 10]);
+    ctx.strokeStyle = `rgba(255,180,80,${(0.25 + 0.25 * pulse).toFixed(2)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, 40 + pulse * 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+// A white-out that clears, drawn over everything.
+function drawNukeFlash() {
+  if (nukeFlash <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, nukeFlash * 1.15);
+  ctx.fillStyle = '#fff6e0';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function dropMine() {
+  const c = Math.cos(car.a), sn = Math.sin(car.a);
+  mines.push({
+    x: car.x - c * 30, y: car.y - sn * 30,
+    life: MINE_LIFE, arm: MINE_ARM, owner: NET.id || 0, spin: 0,
+  });
+  send({ t: 'mine', x: Math.round(car.x - c * 30), y: Math.round(car.y - sn * 30) });
+}
+
+function updateMines(dt) {
+  for (let i = mines.length - 1; i >= 0; i--) {
+    const m = mines[i];
+    m.life -= dt;
+    m.arm -= dt;
+    m.spin += dt * 3;
+    if (m.life <= 0) { mines.splice(i, 1); continue; }
+    const d = Math.hypot(car.x - m.x, car.y - m.y);
+    if (d < MINE_RADIUS && m.arm <= 0 && car.wreckTimer <= 0) {
+      explode(m.x, m.y);
+      mines.splice(i, 1);
+      applyDamage(car.x, car.y, 0.45, 6);
+      car.vx += (car.x - m.x) * 3;
+      car.vy += (car.y - m.y) * 3;
+    }
+  }
+}
+
+// =====================================================================
+// destruction
+//
+// Anything with hp can be broken. Rubble is recorded so it keeps showing
+// after the object itself stops blocking, and the break is broadcast so
+// every player sees the same city come apart.
+// =====================================================================
+const rubble = [];        // permanent scars: {x, y, w, h, chunks, kind}
+
+function rubbleFor(s) {
+  const chunks = [];
+  const n = clamp(Math.round((s.w * s.h) / 420), 3, 14);
+  for (let i = 0; i < n; i++) {
+    chunks.push({
+      x: s.x + rand(3, Math.max(4, s.w - 9)),
+      y: s.y + rand(3, Math.max(4, s.h - 9)),
+      w: rand(5, 13), h: rand(4, 10),
+      tone: rng(),
+      tilt: rand(-0.6, 0.6),
+    });
+  }
+  return chunks;
+}
+
+// `silent` is set when the break arrived from the network, so we do not
+// echo it straight back to the player who told us.
+function destroySolid(s, silent) {
+  if (!s || s.dead || typeof s.hp !== 'number') return false;
+  s.dead = true;
+  if (s.ref) s.ref.dead = true;
+  const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+  rubble.push({ x: s.x, y: s.y, w: s.w, h: s.h, chunks: rubbleFor(s), kind: s.kind });
+  if (rubble.length > 90) rubble.shift();
+
+  if (s.kind === 'car') {
+    explode(cx, cy);
+  } else if (s.kind === 'building') {
+    addSmoke(cx, cy, 16);
+    addSparks(cx, cy, 26, null, 300);
+    shakeAt(cx, cy, 9);
+    playBang();
+  } else {
+    addSparks(cx, cy, 10, '#6b4a2a', 180);
+    addSmoke(cx, cy, 5);
+  }
+  if (!silent) send({ t: 'destroy', did: s.did });
+  return true;
+}
+
+function damageSolid(s, amount, silent) {
+  if (!s || s.dead || typeof s.hp !== 'number') return false;
+  s.hp -= amount;
+  if (s.hp <= 0) return destroySolid(s, silent);
+  return false;
+}
+
+// An explosion chews up whatever is close to it, so a wreck or a mine can
+// open a hole in the block it happened next to.
+function blastNearby(x, y, radius, power) {
+  for (const s of solids) {
+    if (s.dead || typeof s.hp !== 'number') continue;
+    const cx = clamp(x, s.x, s.x + s.w), cy = clamp(y, s.y, s.y + s.h);
+    const d = Math.hypot(x - cx, y - cy);
+    if (d > radius) continue;
+    // full power at the centre, tapering to nothing at the edge
+    damageSolid(s, power * (1 - d / radius));
+  }
+}
+
+// =====================================================================
+// collision
+// =====================================================================
+function circleRect(px, py, r, b) {
+  const cx = clamp(px, b.x, b.x + b.w);
+  const cy = clamp(py, b.y, b.y + b.h);
+  const dx = px - cx, dy = py - cy;
+  const d2 = dx * dx + dy * dy;
+  if (d2 > r * r) return null;
+  if (d2 > 0.0001) {
+    const d = Math.sqrt(d2);
+    return { nx: dx / d, ny: dy / d, depth: r - d };
+  }
+  const left = px - b.x, right = b.x + b.w - px, top = py - b.y, bot = b.y + b.h - py;
+  const m = Math.min(left, right, top, bot);
+  if (m === left) return { nx: -1, ny: 0, depth: left + r };
+  if (m === right) return { nx: 1, ny: 0, depth: right + r };
+  if (m === top) return { nx: 0, ny: -1, depth: top + r };
+  return { nx: 0, ny: 1, depth: bot + r };
+}
+
+const CAR_CORNERS = [
+  [-CAR_HALF_L, -CAR_HALF_W], [CAR_HALF_L, -CAR_HALF_W],
+  [CAR_HALF_L, CAR_HALF_W], [-CAR_HALF_L, CAR_HALF_W],
+];
+
+// Ploughing through something light should flatten it rather than stop you.
+function flattenPalms(hitSpeed) {
+  if (hitSpeed <= 120) return false;
+  let flattened = false;
+  for (const s of solids) {
+    if (s.dead || s.kind !== 'palm') continue;
+    if (car.x + 60 < s.x || car.x - 60 > s.x + s.w ||
+        car.y + 60 < s.y || car.y - 60 > s.y + s.h) continue;
+    if (!circleRect(car.x, car.y, RADIUS + 22, s)) continue;
+    destroySolid(s);
+    addSmoke(s.x + s.w / 2, s.y + s.h / 2, 4);
+    flattened = true;
+  }
+  return flattened;
+}
+
+function collide(dt) {
+  let hitSpeed = 0;
+  const ca = Math.cos(car.a), sa = Math.sin(car.a);
+
+  for (const b of solids) {
+    if (b.dead) continue;
+    if (car.x + 60 < b.x || car.x - 60 > b.x + b.w ||
+        car.y + 60 < b.y || car.y - 60 > b.y + b.h) continue;
+
+    let worst = null, worstLocal = null;
+    for (const c of CAR_CORNERS) {
+      const hit = circleRect(car.x + ca * c[0] - sa * c[1], car.y + sa * c[0] + ca * c[1], RADIUS, b);
+      if (hit && (!worst || hit.depth > worst.depth)) { worst = hit; worstLocal = c; }
+    }
+    if (!worst) continue;
+
+    car.x += worst.nx * worst.depth;
+    car.y += worst.ny * worst.depth;
+
+    const vn = car.vx * worst.nx + car.vy * worst.ny;
+    if (vn < 0) {
+      hitSpeed = Math.max(hitSpeed, -vn);
+
+      // Split the impact into the part going into the wall and the part sliding
+      // along it. Bouncing the normal and keeping most of the tangential is
+      // what makes a scrape feel slippery instead of sticky: the car glances
+      // off and keeps its speed down the wall rather than stopping dead.
+      const tx = -worst.ny, ty = worst.nx;
+      const vt = car.vx * tx + car.vy * ty;
+      const REST = 0.26;        // how much of the hit bounces back out
+      const SLIDE = 0.97;       // how much of the scrape survives
+
+      car.vx = worst.nx * (-vn * REST) + tx * (vt * SLIDE);
+      car.vy = worst.ny * (-vn * REST) + ty * (vt * SLIDE);
+
+      // Torque straight from the contact offset crossed with the impulse, so a
+      // corner hit spins the car and a flat scrape barely turns it. The sign
+      // falls out of the geometry rather than being guessed.
+      const rx = ca * worstLocal[0] - sa * worstLocal[1];
+      const ry = sa * worstLocal[0] + ca * worstLocal[1];
+      const torque = (rx * worst.ny - ry * worst.nx) * (-vn);
+      car.a += clamp(torque * 0.00013, -0.12, 0.12);
+    }
+  }
+
+  // world barrier
+  const lo = ROAD / 2 - WALL + RADIUS, hi = WORLD - ROAD / 2 + WALL - RADIUS;
+  let bounced = false;
+  if (car.x < lo) { car.x = lo; bounced = true; }
+  if (car.x > hi) { car.x = hi; bounced = true; }
+  if (car.y < lo) { car.y = lo; bounced = true; }
+  if (car.y > hi) { car.y = hi; bounced = true; }
+  if (bounced) {
+    hitSpeed = Math.max(hitSpeed, Math.hypot(car.vx, car.vy));
+    // Deflect along the barrier rather than reversing everything: an edge in
+    // arcade driving should turn you, not stop you dead.
+    if (car.x <= lo + 0.5 || car.x >= hi - 0.5) car.vx *= -0.25;
+    if (car.y <= lo + 0.5 || car.y >= hi - 0.5) car.vy *= -0.25;
+  }
+
+  flattenPalms(hitSpeed);
+
+  if (hitSpeed > IMPACT_FREE) {
+    applyDamage(car.x, car.y, (hitSpeed - IMPACT_FREE) / IMPACT_SCALE, 6);
+  }
+}
+
+// =====================================================================
+// physics
+// =====================================================================
+function step(dt) {
+  if (car.wreckTimer > 0) {
+    car.wreckTimer -= dt;
+    updateWreck(dt);
+    updateParticles(dt);
+    updateBullets(dt);
+    updateKillFeed(dt);
+    updateMines(dt);
+    updatePeds(dt);
+    updateFires(dt);
+    if (car.wreckTimer <= 0) respawn();
+    return;
+  }
+
+  const ca = Math.cos(car.a), sa = Math.sin(car.a);
+  let vf = car.vx * ca + car.vy * sa;
+  let vl = -car.vx * sa + car.vy * ca;
+
+  const boosting = car.boostTimer > 0;
+  if (boosting) car.boostTimer -= dt;
+  if (car.shieldTimer > 0) car.shieldTimer -= dt;
+
+  const th = throttle();
+  if (th > 0) vf += (vf < 0 ? BRAKE : accelNow()) * dt;
+  if (boosting) vf += BOOST_ACCEL * dt;
+  else if (th < 0) vf -= (vf > 0 ? BRAKE : REVERSE) * dt;
+  else vf -= vf * DRAG * dt;
+  if (handbrake() && th === 0) vf -= vf * 2.2 * dt;
+  const base = topSpeedNow();
+  const topSpeed = boosting ? base * BOOST_TOP : base;
+  if (vf > topSpeed) vf = Math.max(topSpeed, vf - 900 * dt);
+  if (vf < -160) vf = -160;
+
+  const grip = handbrake() ? DRIFT_GRIP : gripNow();
+  vl -= vl * Math.min(1, grip * dt);
+
+  const total = Math.hypot(vf, vl);
+  if (total > DRIFT_SPEED_CAP) {
+    const k = DRIFT_SPEED_CAP / total;
+    vf *= k; vl *= k;
+  }
+
+  // Yaw is applied AFTER the world conversion below: rotating the heading must
+  // NOT rotate the velocity vector, or the car can never slide.
+  const speedRatio = clamp(Math.abs(vf) / 220, 0, 1);
+  const authority = speedRatio * (1 - 0.35 * clamp((Math.abs(vf) - 380) / 300, 0, 1));
+  car.a += -steering() * STEER * authority * dt * Math.sign(vf || 1);
+
+  car.vx = ca * vf - sa * vl;
+  car.vy = sa * vf + ca * vl;
+
+  car.x += car.vx * dt;
+  car.y += car.vy * dt;
+
+  collide(dt);
+  updateBoxes(dt);
+  updateMines(dt);
+  updatePeds(dt);
+  updateFires(dt);
+
+  // guns cool down and bullets advance on the fixed physics tick, so fire
+  // rate and bullet speed do not vary with frame rate
+  if (fireCooldown > 0) fireCooldown -= dt;
+  if (firing) fire();
+  updateBullets(dt);
+
+  car.engine = clamp((Math.abs(vf) / topSpeedNow()) * 0.75 + Math.abs(throttle()) * 0.25, 0, 1);
+  car.braking = th < 0 || (th > 0 && vf < 0);
+
+  const sliding = Math.abs(vl) > 55 && Math.abs(vf) > 60;
+  const spinning = Math.abs(vf) < 30 && Math.abs(throttle()) > 0;
+
+  // Track our last tyre positions so remote peers can draw our skid trail;
+  // skid state itself rides along in the position packet.
+  netSkid.x0 = netSkid.x1;
+  netSkid.y0 = netSkid.y1;
+  netSkid.x1 = car.x;
+  netSkid.y1 = car.y;
+  netSkid.on = sliding || spinning;
+
+  if (sliding || spinning) {
+    if (skids.length < 900) {
+      const ox = -sa * CAR_HALF_W, oy = ca * CAR_HALF_W;
+      for (const s of [-1, 1]) {
+        skids.push({
+          x0: car.x + s * ox + ca * -CAR_HALF_L * 0.6,
+          y0: car.y + s * oy + sa * -CAR_HALF_L * 0.6,
+          x1: car.x + s * ox + ca * CAR_HALF_L * 0.6,
+          y1: car.y + s * oy + sa * CAR_HALF_L * 0.6,
+          life: 1,
+        });
+      }
+    }
+    if (smoke.length < 150) {
+      addSmoke(car.x - ca * CAR_HALF_L * 0.6, car.y - sa * CAR_HALF_L * 0.6, 1);
+      addSmoke(car.x + ca * CAR_HALF_L * 0.6, car.y + sa * CAR_HALF_L * 0.6, 1);
+    }
+  }
+
+  updateParticles(dt);
+  updateKillFeed(dt);
+  updateStreaks(dt);
+  updateNukes(dt);
+}
+
+// The wrecked car burns while you wait for the respawn.
+function updateWreck(dt) {
+  addSmoke(car.x + (rng() - 0.5) * 16, car.y + (rng() - 0.5) * 16, 2);
+  if (rng() < 0.25) addSparks(car.x, car.y, 1, '#ff8a3d', 120);
+}
+
+// =====================================================================
+// camera
+// =====================================================================
+const ZOOM_BASE = 1.5;
+let zoom = ZOOM_BASE;
+
+function updateCamera(dt) {
+  const tx = car.x + car.vx * 0.28;
+  const ty = car.y + car.vy * 0.28;
+  const k = 1 - Math.pow(0.0015, dt);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+
+  // impact shake, decaying on its own
+  if (shakeAmount > 0.05) {
+    cam.x += (rng() - 0.5) * shakeAmount;
+    cam.y += (rng() - 0.5) * shakeAmount;
+    shakeAmount *= Math.pow(0.02, dt);
+  } else shakeAmount = 0;
+
+  cam.x = clamp(cam.x, W / 2 / zoom, WORLD - W / 2 / zoom);
+  cam.y = clamp(cam.y, H / 2 / zoom, WORLD - H / 2 / zoom);
+}
+
+function visible(x, y, w, h, pad = 90) {
+  const vw = W / zoom / 2 + pad, vh = H / zoom / 2 + pad;
+  return x + w > cam.x - vw && x < cam.x + vw && y + h > cam.y - vh && y < cam.y + vh;
+}
+
+// =====================================================================
+// render: ground
+// =====================================================================
+let seaGrad = null, seaGradKey = '';
+
+function drawSeaAndBeach() {
+  // ocean
+  if (seaGradKey !== nightF().toFixed(2)) {
+    seaGradKey = nightF().toFixed(2);
+    const deep = mixColor('#1d7fa8', '#07121f', nightF());
+    const shallow = mixColor('#4fc3d9', '#123049', nightF());
+    seaGrad = ctx.createLinearGradient(-SEA, 0, WORLD + SEA, WORLD + SEA);
+    seaGrad.addColorStop(0, deep);
+    seaGrad.addColorStop(0.5, shallow);
+    seaGrad.addColorStop(1, deep);
+  }
+  ctx.fillStyle = seaGrad;
+  ctx.fillRect(-SEA, -SEA, WORLD + 2 * SEA, WORLD + 2 * SEA);
+
+  // beach sand ring
+  const sand = mixColor('#e8d6a8', '#2a2b3a', nightF());
+  const b = WORLD - ROAD / 2 + WALL - WALL / 2;
+  ctx.fillStyle = sand;
+  ctx.fillRect(b - BEACH, b - BEACH, WORLD - (b - BEACH) + 2 * BEACH, WORLD - (b - BEACH) + 2 * BEACH);
+  ctx.clearRect(0, 0, WORLD, WORLD);
+
+  // surf line
+  ctx.strokeStyle = rgba('#ffffff', 0.35 * (1 - nightF() * 0.7));
+  ctx.lineWidth = 3;
+  ctx.strokeRect(-BEACH * 0.55, -BEACH * 0.55, WORLD + 2 * BEACH * 0.55, WORLD + 2 * BEACH * 0.55);
+
+  // waves
+  ctx.strokeStyle = rgba('#ffffff', 0.10 * (1 - nightF() * 0.6));
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let k = 0; k < 7; k++) {
+    const off = -SEA * 0.5 + k * 130;
+    ctx.moveTo(-SEA + off, -SEA);
+    ctx.lineTo(WORLD + SEA + off, -SEA);
+  }
+  ctx.stroke();
+}
+
+function drawGround() {
+  drawSeaAndBeach();
+
+  // asphalt, then lighter sidewalk slabs over the blocks
+  ctx.fillStyle = '#3a3f47';
+  ctx.fillRect(0, 0, WORLD, WORLD);
+
+  const walk = '#8e8b84';
+  ctx.fillStyle = walk;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      const x = i * STEP + ROAD, y = j * STEP + ROAD;
+      if (visible(x, y, BLOCK, BLOCK)) ctx.fillRect(x, y, BLOCK, BLOCK);
+    }
+  }
+
+  // open lots: darker tarmac, bays painted only along the parked ranks
+  ctx.fillStyle = '#31353c';
+  for (const lot of lots) {
+    if (!visible(lot.x, lot.y, lot.w, lot.h)) continue;
+    ctx.fillRect(lot.x, lot.y, lot.w, lot.h);
+    ctx.strokeStyle = 'rgba(240,235,200,0.26)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = lot.x + 26; x < lot.x + lot.w - 26; x += 46) {
+      ctx.moveTo(x, lot.y + 12); ctx.lineTo(x, lot.y + 38);
+      ctx.moveTo(x, lot.y + lot.h - 12); ctx.lineTo(x, lot.y + lot.h - 38);
+    }
+    ctx.stroke();
+  }
+
+  // lane markings
+  ctx.strokeStyle = rgba('#f2e6b0', 0.5);
+  ctx.lineWidth = 3;
+  ctx.setLineDash([28, 26]);
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const p = i * STEP + ROAD / 2;
+    ctx.moveTo(p, 0); ctx.lineTo(p, WORLD);
+    ctx.moveTo(0, p); ctx.lineTo(WORLD, p);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // kerb line
+  ctx.strokeStyle = rgba('#ffffff', 0.14);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(ROAD / 2, ROAD / 2, WORLD - ROAD, WORLD - ROAD);
+
+  // crosswalks on every intersection approach
+  ctx.fillStyle = rgba('#ffffff', 0.30);
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      const cx = i * STEP + ROAD / 2, cy = j * STEP + ROAD / 2;
+      for (let k = -3; k <= 3; k++) {
+        const o = k * 12;
+        // vertical approach bars
+        ctx.fillRect(cx + o - 4, cy - ROAD / 2 - 16, 8, 13);
+        ctx.fillRect(cx + o - 4, cy + ROAD / 2 + 3, 8, 13);
+        // horizontal approach bars
+        ctx.fillRect(cx - ROAD / 2 - 16, cy + o - 4, 13, 8);
+        ctx.fillRect(cx + ROAD / 2 + 3, cy + o - 4, 13, 8);
+      }
+    }
+  }
+}
+
+// Pools of light cast onto the road. These are part of the geometry pass, so
+// they get tinted with everything else -- which reads correctly, since they
+// are reflected light on the ground rather than sources.
+function drawGroundLights(nf) {
+  if (nf < 0.02) return;
+  ctx.globalCompositeOperation = 'lighter';
+
+  const lamp = glowSprite('#ffcf87');
+  for (const l of lamps) {
+    if (!visible(l.x - 90, l.y - 90, 180, 180)) continue;
+    ctx.globalAlpha = nf * 0.55;
+    ctx.drawImage(lamp, l.x - 78, l.y - 78, 156, 156);
+  }
+
+  for (const s of neonSigns) {
+    if (!visible(s.x - 150, s.y - 150, 300, 300)) continue;
+    const size = s.rot ? 150 : 130;
+    ctx.globalAlpha = nf * 0.5;
+    ctx.drawImage(glowSprite(s.hex), s.x - size / 2, s.y - size / 2, size, size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawShadows() {
+  const sh = sunShadow();
+  if (sh.a <= 0.01) return;
+  ctx.fillStyle = `rgba(12,14,22,${sh.a})`;
+  for (const b of buildings) {
+    if (!visible(b.x, b.y, b.w, b.h, 260)) continue;
+    ctx.fillRect(b.x + sh.ox, b.y + sh.oy, b.w, b.h);
+  }
+}
+
+// =====================================================================
+// render: buildings
+// =====================================================================
+function drawRubble() {
+  for (const r of rubble) {
+    if (!visible(r.x, r.y, r.w, r.h)) continue;
+    // scorched ground first
+    ctx.fillStyle = r.kind === 'car' ? 'rgba(24,20,18,0.55)' : 'rgba(30,28,26,0.42)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (r.kind === 'building') {
+      // the floor slab is left behind, so the whole block does not vanish
+      ctx.fillStyle = 'rgba(90,86,80,0.85)';
+      ctx.fillRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6);
+      ctx.fillStyle = 'rgba(58,54,50,0.9)';
+      ctx.fillRect(r.x + 8, r.y + 8, r.w - 16, r.h - 16);
+    }
+    for (const c of r.chunks) {
+      ctx.save();
+      ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+      ctx.rotate(c.tilt);
+      ctx.fillStyle = c.tone < 0.4 ? '#6d6862' : c.tone < 0.75 ? '#565049' : '#7d766c';
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, 2);
+      ctx.restore();
+    }
+    // a last wisp of dust while the wound is fresh
+    if (r.smokeFor === undefined) r.smokeFor = 1;
+  }
+}
+
+function drawBuildings(nf) {
+  for (const b of buildings) {
+    if (b.dead) continue;
+    if (!visible(b.x, b.y, b.w, b.h)) continue;
+
+    // wall band, gives the block thickness from above
+    ctx.fillStyle = mixColor(b.roof, '#000000', 0.35);
+    ctx.fillRect(b.x + 4, b.y + 4, b.w, b.h);
+
+    // wounds show as the block takes fire
+    const wear = typeof b.maxHp === 'number' ? 1 - clamp(b.hp / b.maxHp, 0, 1) : 0;
+    ctx.fillStyle = b.roof;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    if (wear > 0.05) {
+      ctx.fillStyle = `rgba(30,24,20,${(wear * 0.5).toFixed(3)})`;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      // a couple of cracks, positioned from the building so they do not jitter
+      ctx.strokeStyle = `rgba(18,14,12,${(wear * 0.8).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      const seed = (b.x * 7 + b.y * 13) % 100;
+      for (let i = 0; i < Math.round(wear * 4); i++) {
+        const ax = b.x + ((seed * (i + 3)) % Math.max(1, b.w - 12)) + 6;
+        const ay = b.y + ((seed * (i + 7)) % Math.max(1, b.h - 12)) + 6;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax + 14, ay + 9);
+        ctx.lineTo(ax + 7, ay + 18);
+        ctx.stroke();
+      }
+    }
+
+    // parapet
+    ctx.strokeStyle = rgba('#ffffff', 0.16);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(b.x + 1.5, b.y + 1.5, b.w - 3, b.h - 3);
+
+    // rooftop clutter
+    for (const bit of b.roofBits) {
+      if (bit.kind === 'tank') {
+        ctx.fillStyle = '#5b5f63';
+        ctx.beginPath();
+        ctx.arc(bit.x + bit.w / 2, bit.y + bit.h / 2, Math.min(bit.w, bit.h) / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (bit.kind === 'plant') {
+        ctx.fillStyle = '#3f6b45';
+        ctx.fillRect(bit.x, bit.y, bit.w, bit.h);
+      } else {
+        ctx.fillStyle = '#6d7278';
+        ctx.fillRect(bit.x, bit.y, bit.w, bit.h);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(bit.x + 2, bit.y + bit.h - 4, bit.w - 4, 3);
+      }
+    }
+
+    // a restrained warm halo so lit blocks read as inhabited at night
+    if (nf > 0.05 && b.lit) {
+      ctx.globalAlpha = nf * 0.16;
+      ctx.drawImage(glowSprite('#ffb974'), b.x + b.w * 0.12, b.y + b.h * 0.12, b.w * 0.76, b.h * 0.76);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawPalms() {
+  for (const p of palms) {
+    if (p.dead) continue;
+    if (!visible(p.x - 30, p.y - 30, 60, 60)) continue;
+    const s = p.s;
+    // shadow on the ground
+    ctx.strokeStyle = 'rgba(10,12,18,0.22)';
+    ctx.lineWidth = 2 * s;
+    for (let i = 0; i < p.fronds; i++) {
+      const a = p.seed + (i / p.fronds) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 3 * s, p.y + 3 * s);
+      ctx.lineTo(p.x + 3 * s + Math.cos(a) * 13 * s, p.y + 3 * s + Math.sin(a) * 13 * s);
+      ctx.stroke();
+    }
+    // fronds
+    for (let i = 0; i < p.fronds; i++) {
+      const a = p.seed + (i / p.fronds) * Math.PI * 2 + Math.sin(p.seed * 3) * 0.1;
+      const len = 14 * s;
+      ctx.strokeStyle = i % 2 ? '#2f6b3c' : '#3d8449';
+      ctx.lineWidth = 2.6 * s;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(
+        p.x + Math.cos(a) * len * 0.6, p.y + Math.sin(a) * len * 0.6 - 3 * s,
+        p.x + Math.cos(a) * len, p.y + Math.sin(a) * len
+      );
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#6b4a2a';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.6 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Each ability gets its own mark, drawn from paths rather than an image so
+// there is nothing to load. Coordinates are in a -1..1 box, scaled by r.
+function drawItemIcon(x, y, r, kind) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (kind === 'boost') {
+    // a lightning bolt
+    ctx.fillStyle = '#2a1f04';
+    ctx.beginPath();
+    ctx.moveTo(0.18 * r, -0.95 * r);
+    ctx.lineTo(-0.5 * r, 0.12 * r);
+    ctx.lineTo(-0.06 * r, 0.12 * r);
+    ctx.lineTo(-0.2 * r, 0.95 * r);
+    ctx.lineTo(0.52 * r, -0.14 * r);
+    ctx.lineTo(0.06 * r, -0.14 * r);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'shield') {
+    // a crest
+    ctx.fillStyle = '#062430';
+    ctx.beginPath();
+    ctx.moveTo(0, -0.85 * r);
+    ctx.lineTo(0.7 * r, -0.5 * r);
+    ctx.lineTo(0.7 * r, 0.15 * r);
+    ctx.quadraticCurveTo(0.7 * r, 0.8 * r, 0, 0.95 * r);
+    ctx.quadraticCurveTo(-0.7 * r, 0.8 * r, -0.7 * r, 0.15 * r);
+    ctx.lineTo(-0.7 * r, -0.5 * r);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'repair') {
+    // a medical cross
+    ctx.fillStyle = '#052a17';
+    ctx.fillRect(-0.28 * r, -0.85 * r, 0.56 * r, 1.7 * r);
+    ctx.fillRect(-0.85 * r, -0.28 * r, 1.7 * r, 0.56 * r);
+  } else if (kind === 'mine') {
+    // a spiked ball
+    ctx.strokeStyle = '#3a0d0d';
+    ctx.lineWidth = Math.max(1.6, 0.18 * r);
+    ctx.fillStyle = '#3a0d0d';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 0.45 * r, Math.sin(a) * 0.45 * r);
+      ctx.lineTo(Math.cos(a) * 0.95 * r, Math.sin(a) * 0.95 * r);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.5 * r, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === 'nuke') {
+    // a trefoil
+    ctx.fillStyle = '#3a1405';
+    for (let i = 0; i < 3; i++) {
+      const a0 = -Math.PI / 2 + i * (Math.PI * 2 / 3) - 0.5;
+      const a1 = a0 + 1.0;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, 0.92 * r, a0, a1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.3 * r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
+}
+
+function drawPeds() {
+  for (const p of peds) {
+    if (!p.alive) continue;
+    if (!visible(p.x - 20, p.y - 20, 40, 40)) continue;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.a);
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(1.5, 2.5, 7, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // arms, swinging with the stride
+    const swing = Math.sin(p.phase) * 4;
+    ctx.fillStyle = p.clothes;
+    ctx.fillRect(-1 + swing, -8, 4, 4);
+    ctx.fillRect(-1 - swing, 4, 4, 4);
+    // body
+    ctx.fillStyle = p.clothes;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // head
+    ctx.fillStyle = p.skin;
+    ctx.beginPath();
+    ctx.arc(1.5, 0, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawCash() {
+  for (const c of cash) {
+    if (!visible(c.x - 16, c.y - 16, 32, 32)) continue;
+    const bob = Math.sin(c.bob) * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y + 6, 8, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3f7d4a';
+    ctx.fillRect(c.x - 7, c.y - 4 + bob, 14, 9);
+    ctx.fillStyle = '#5fae6d';
+    ctx.fillRect(c.x - 5, c.y - 2 + bob, 10, 5);
+    ctx.fillStyle = '#d9e8b0';
+    ctx.font = '700 7px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('$', c.x, c.y + bob + 0.5);
+  }
+}
+
+// Floating +$ text, drawn after the tint so it stays legible.
+function drawFires() {
+  if (!fires.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const f of fires) {
+    if (!visible(f.x - f.r - 20, f.y - f.r - 20, f.r * 2 + 40, f.r * 2 + 40)) continue;
+    const flare = 0.6 + 0.4 * Math.sin(performance.now() / 90 + f.seed);
+    const a = Math.min(1, f.life / 1.5) * flare;
+    ctx.globalAlpha = a;
+    ctx.drawImage(glowSprite('#ff6a1f'), f.x - f.r * 1.5, f.y - f.r * 1.5, f.r * 3, f.r * 3);
+    ctx.globalAlpha = a * 0.9;
+    ctx.drawImage(glowSprite('#ffd24a'), f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const q of popups) {
+    const a = Math.min(1, q.life / 0.5);
+    ctx.globalAlpha = a;
+    ctx.font = '700 12px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = 'rgba(8,11,18,0.7)';
+    ctx.fillText(q.text, q.x + 1, q.y + 1);
+    ctx.fillStyle = q.color;
+    ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawBoxes() {
+  for (const b of boxes) {
+    if (!b.active) continue;
+    if (!visible(b.x - 30, b.y - 30, 60, 60)) continue;
+    // a floating cube: the top face and two sides, squashed to read from above
+    const t = b.spin;
+    const w = 22, h = 13;
+    const bob = Math.sin(t * 2) * 2;
+    ctx.save();
+    ctx.translate(b.x, b.y + bob);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, 12 - bob, 14, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // body
+    ctx.fillStyle = '#2b6fd8';
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.fillStyle = '#3d8cf0';
+    ctx.fillRect(-w / 2, -h / 2, w, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+    // a translucent face that catches the light as it turns
+    const shade = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(t));
+    ctx.fillStyle = `rgba(255,255,255,${shade.toFixed(2)})`;
+    ctx.fillRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4);
+
+    // the contents, so you can pick which box to go for
+    ctx.restore();
+    drawItemIcon(b.x, b.y + bob, 8, b.kind);
+  }
+}
+
+function drawMines() {
+  for (const m of mines) {
+    if (!visible(m.x - 24, m.y - 24, 48, 48)) continue;
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(m.spin);
+    ctx.fillStyle = m.arm > 0 ? '#5a6068' : '#2b2f36';
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = m.arm > 0 ? '#7d848c' : '#ff5c5c';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 8, Math.sin(a) * 8);
+      ctx.lineTo(Math.cos(a) * 13, Math.sin(a) * 13);
+      ctx.stroke();
+    }
+    if (m.arm <= 0 && Math.sin(m.spin * 6) > 0) {
+      ctx.fillStyle = '#ff4b3e';
+      ctx.beginPath();
+      ctx.arc(0, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawParked() {
+  for (const p of parked) {
+    if (p.dead) continue;
+    if (!visible(p.x - 30, p.y - 30, 60, 60)) continue;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.a);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(-18, -9, 40, 22);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-20, -10, 40, 20);
+    ctx.fillStyle = '#1c2630';
+    ctx.fillRect(-6, -7, 13, 14);
+    ctx.fillStyle = 'rgba(150,195,225,0.4)';
+    ctx.fillRect(5, -6, 4, 12);
+    ctx.restore();
+  }
+}
+
+// =====================================================================
+// render: skids, smoke, car
+// =====================================================================
+function drawSkids() {
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 5;
+  const TIERS = 4;
+  for (let tier = 0; tier < TIERS; tier++) {
+    const lo = tier / TIERS, hi = (tier + 1) / TIERS;
+    let opened = false;
+    for (const s of skids) {
+      if (s.life < lo || s.life >= hi) continue;
+      if (!opened) { ctx.beginPath(); opened = true; }
+      ctx.moveTo(s.x0, s.y0);
+      ctx.lineTo(s.x1, s.y1);
+    }
+    if (!opened) continue;
+    ctx.strokeStyle = `rgba(18,18,20,${0.4 * (lo + hi) / 2})`;
+    ctx.stroke();
+  }
+}
+
+// Remote players leave their own skid trail, so drifting with friends reads
+// clearly instead of looking like the car is on rails.
+function drawRemoteSkids() {
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 5;
+  for (const p of NET.peers.values()) {
+    if (!p.skid) continue;
+    ctx.strokeStyle = 'rgba(18,18,20,0.32)';
+    ctx.beginPath();
+    ctx.moveTo(p.sx0, p.sy0);
+    ctx.lineTo(p.sx1, p.sy1);
+    ctx.stroke();
+  }
+}
+
+// Draw a car at an arbitrary transform, shared by the local and remote cars so
+// they look like the same vehicle.
+function drawCarBody(x, y, angle, color, opts) {
+  const o = opts || {};
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(-CAR_HALF_L + 4, -CAR_HALF_W + 4, CAR_HALF_L * 2, CAR_HALF_W * 2);
+
+  ctx.fillStyle = color;
+  ctx.fillRect(-CAR_HALF_L, -CAR_HALF_W, CAR_HALF_L * 2, CAR_HALF_W * 2);
+  ctx.fillStyle = rgba('#ffffff', 0.16);
+  ctx.fillRect(-CAR_HALF_L, -CAR_HALF_W, CAR_HALF_L * 2, 4);
+  ctx.fillStyle = rgba('#000000', 0.2);
+  ctx.fillRect(-CAR_HALF_L, CAR_HALF_W - 5, CAR_HALF_L * 2, 5);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-CAR_HALF_L, -CAR_HALF_W, CAR_HALF_L * 2, CAR_HALF_W * 2);
+
+  ctx.fillStyle = '#16212c';
+  ctx.fillRect(-9, -CAR_HALF_W + 3, 18, CAR_HALF_W * 2 - 6);
+  ctx.fillStyle = 'rgba(160,205,235,0.55)';
+  ctx.fillRect(5, -CAR_HALF_W + 4, 5, CAR_HALF_W * 2 - 8);
+  ctx.fillStyle = 'rgba(120,165,200,0.3)';
+  ctx.fillRect(-9, -CAR_HALF_W + 4, 4, CAR_HALF_W * 2 - 8);
+
+  ctx.fillStyle = '#14161a';
+  for (const [wx, wy] of [[-13, -12], [-13, 10], [11, -12], [11, 10]]) ctx.fillRect(wx, wy, 7, 4);
+
+  // the guns, poking out of the nose
+  if (!o.noGuns) {
+    ctx.fillStyle = '#2a2f36';
+    ctx.fillRect(CAR_HALF_L - 2, -9, 11, 3.5);
+    ctx.fillRect(CAR_HALF_L - 2, 5.5, 11, 3.5);
+    ctx.fillStyle = '#4a515a';
+    ctx.fillRect(CAR_HALF_L + 5, -8.5, 4, 2.5);
+    ctx.fillRect(CAR_HALF_L + 5, 6, 4, 2.5);
+  }
+
+  ctx.fillStyle = '#fff6cf';
+  ctx.fillRect(CAR_HALF_L - 4, -CAR_HALF_W + 2, 4, 5);
+  ctx.fillRect(CAR_HALF_L - 4, CAR_HALF_W - 7, 4, 5);
+  ctx.fillStyle = o.braking ? '#ff2b1c' : '#c8322a';
+  ctx.fillRect(-CAR_HALF_L - 1, -CAR_HALF_W + 2, 3, 6);
+  ctx.fillRect(-CAR_HALF_L - 1, CAR_HALF_W - 8, 3, 6);
+
+  ctx.restore();
+}
+
+// Drawn in the additive pass so a boost or a shield reads at any time of day.
+function drawCarEffect(x, y, opts) {
+  if (opts.boost) {
+    const c = Math.cos(opts.a), sn = Math.sin(opts.a);
+    for (let i = 0; i < 3; i++) {
+      const back = 22 + i * 14;
+      const flare = ctx.createRadialGradient(
+        x - c * back, y - sn * back, 0,
+        x - c * back, y - sn * back, 16 - i * 3
+      );
+      flare.addColorStop(0, 'rgba(255,214,120,0.75)');
+      flare.addColorStop(0.5, 'rgba(255,138,61,0.35)');
+      flare.addColorStop(1, 'rgba(255,80,40,0)');
+      ctx.fillStyle = flare;
+      ctx.beginPath();
+      ctx.arc(x - c * back, y - sn * back, 16 - i * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (opts.shield) {
+    const pulse = 0.72 + 0.28 * Math.sin(performance.now() / 160);
+    ctx.strokeStyle = `rgba(90,220,255,${0.5 * pulse})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.drawImage(glowSprite('#25e0ff'), x - 38, y - 38, 76, 76);
+  }
+  if (opts.item) {
+    const info = ITEM_INFO[opts.item];
+    if (info) ctx.drawImage(glowSprite(info.color), x - 26, y - 46, 52, 60);
+  }
+}
+
+// The floating name tag and health bar, used for our own car and for
+// everyone else so they all read the same way.
+function drawCarTag(x, y, name, color, damage, opts) {
+  const o = opts || {};
+  ctx.save();
+  ctx.font = '600 11px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const w = ctx.measureText(name).width;
+  const tagW = Math.max(w + 10, 54);
+  const tagX = x - tagW / 2;
+  ctx.fillStyle = 'rgba(8,11,18,0.72)';
+  ctx.fillRect(tagX, y - 46, tagW, 30);
+  ctx.fillStyle = o.mine ? '#ffffff' : '#dfe8f4';
+  ctx.fillText(name, x, y - 33);
+
+  // health is the bar minus the damage taken, coloured like the HUD readout
+  const hp = clamp(1 - (damage || 0), 0, 1);
+  const barW = tagW - 10;
+  ctx.fillStyle = 'rgba(255,255,255,0.26)';
+  ctx.fillRect(tagX + 5, y - 25, barW, 7);
+  ctx.fillStyle = hp < 0.25 ? '#ff4b3e' : hp < 0.6 ? '#ffb020' : '#4bd07a';
+  ctx.fillRect(tagX + 5, y - 25, barW * hp, 7);
+  ctx.strokeStyle = o.mine ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tagX + 5.5, y - 24.5, barW - 1, 6);
+  ctx.restore();
+}
+
+function drawRemoteCars() {
+  for (const p of NET.peers.values()) {
+    if (!visible(p.x - 60, p.y - 60, 120, 120)) continue;
+    drawCarBody(p.x, p.y, p.a, p.color, { braking: !!p.hb });
+    drawCarEffect(p.x, p.y, { a: p.a, boost: !!p.bo, shield: !!p.sh, item: p.item });
+
+    drawCarTag(p.x, p.y, p.name, p.color, p.damage, {});
+  }
+}
+
+function drawSmoke() {
+  for (const p of smoke) {
+    ctx.fillStyle = `rgba(200,204,212,${0.22 * p.life})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (1.6 - p.life * 0.6), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawCar() {
+  drawCarBody(car.x, car.y, car.a, car.wreckTimer > 0 ? '#6b2f2f' : '#d8462f',
+              { braking: car.braking });
+}
+
+// Headlight cone. Drawn additively in the light pass so it survives the night
+// tint instead of being dimmed along with the geometry.
+function drawCarBeam(nf) {
+  const c = Math.cos(car.a), s = Math.sin(car.a);
+  const beamA = 0.12 + nf * 0.20;
+  const beam = ctx.createLinearGradient(
+    car.x + c * (CAR_HALF_L - 4), car.y + s * (CAR_HALF_L - 4),
+    car.x + c * (CAR_HALF_L + 180), car.y + s * (CAR_HALF_L + 180)
+  );
+  beam.addColorStop(0, `rgba(255,238,180,${beamA})`);
+  beam.addColorStop(1, 'rgba(255,238,180,0)');
+  ctx.fillStyle = beam;
+  const L = CAR_HALF_L + 180, W2 = 46;
+  ctx.beginPath();
+  ctx.moveTo(car.x + c * (CAR_HALF_L - 4) - s * (CAR_HALF_W - 2), car.y + s * (CAR_HALF_L - 4) + c * (CAR_HALF_W - 2));
+  ctx.lineTo(car.x + c * L - s * W2, car.y + s * L + c * W2);
+  ctx.lineTo(car.x + c * L + s * W2, car.y + s * L - c * W2);
+  ctx.lineTo(car.x + c * (CAR_HALF_L - 4) + s * (CAR_HALF_W - 2), car.y + s * (CAR_HALF_L - 4) - c * (CAR_HALF_W - 2));
+  ctx.closePath();
+  ctx.fill();
+
+  // brake lights bloom harder when you are actually slowing down
+  if (car.braking || handbrake()) {
+    ctx.drawImage(glowSprite('#ff2b1c'), car.x - c * 30 - 34, car.y - s * 30 - 34, 68, 68);
+  }
+}
+
+// =====================================================================
+// lighting pass
+// =====================================================================
+// World-space light pass. Everything here is additive and runs AFTER the
+// tint, which is what makes neon and headlights actually glow at night
+// instead of being dimmed along with the tarmac.
+function drawLights(nf) {
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Sign faces are painted tubes on the buildings, so they read in daylight
+  // too; only the glow halo around them needs darkness. With the cycle
+  // disabled nf is always 0, so this keeps the colour in the scene.
+  for (const s of neonSigns) {
+    if (!visible(s.x - 60, s.y - 60, 120, 120)) continue;
+    ctx.globalAlpha = 0.55 + nf * 0.45;
+    ctx.fillStyle = s.hex;
+    if (s.rot) ctx.fillRect(s.x, s.y, s.h, s.w);
+    else ctx.fillRect(s.x, s.y, s.w, s.h);
+  }
+  ctx.globalAlpha = 1;
+
+  if (nf > 0.02) {
+    // lamp bulbs
+    const bulb = glowSprite('#ffd79a');
+    for (const l of lamps) {
+      if (!visible(l.x - 50, l.y - 50, 100, 100)) continue;
+      ctx.globalAlpha = nf * 0.75;
+      ctx.drawImage(bulb, l.x - 22, l.y - 22, 44, 44);
+    }
+    ctx.globalAlpha = 1;
+
+    // neon haze behind the sign faces
+    for (const s of neonSigns) {
+      if (!visible(s.x - 90, s.y - 90, 180, 180)) continue;
+      ctx.drawImage(glowSprite(s.hex), s.x - 56, s.y - 56, 112, 112);
+    }
+  }
+
+  drawCarBeam(nf);
+
+  // warm bloom through the golden hours
+  const alt = sunAlt();
+  if (alt > -0.2 && alt < 0.4) {
+    ctx.globalAlpha = (0.4 - alt) * 0.42;
+    ctx.drawImage(glowSprite('#ff9a4d'), -W * 0.5, -H * 0.5, W * 2, H * 2);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawLighting(nf) {
+  // time-of-day tint over the finished geometry
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = sceneTint();
+  ctx.fillRect(-W, -H, W * 3, H * 3);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// =====================================================================
+// minimap
+// =====================================================================
+const MAP_SIZE = 168;
+const MAP_SCALE = 0.30;
+let mapBase = null;
+
+// Dark scrim so HUD panels stay legible over bright tarmac at golden hour,
+// not just against a night scene.
+function panel(x, y, w, h) {
+  ctx.fillStyle = 'rgba(8,11,18,0.66)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+}
+
+function buildMapBase() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = Math.ceil(WORLD * MAP_SCALE);
+  const c = cv.getContext('2d');
+  const s = MAP_SCALE;
+  c.fillStyle = '#0a0e16';
+  c.fillRect(0, 0, cv.width, cv.height);
+  // road surface reads lighter than the blocks, like a city map
+  c.fillStyle = '#26304a';
+  c.fillRect(0, 0, cv.width, cv.height);
+  // blocks
+  c.fillStyle = '#0e131d';
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      c.fillRect((i * STEP + ROAD) * s, (j * STEP + ROAD) * s, BLOCK * s, BLOCK * s);
+    }
+  }
+  // open lots read lighter so you can spot drift space on the map
+  c.fillStyle = '#222c3d';
+  for (const lot of lots) {
+    c.fillRect(lot.x * s, lot.y * s, lot.w * s, lot.h * s);
+  }
+  mapBase = cv;
+}
+buildMapBase();
+
+function drawMinimap(nf) {
+  const pad = 12;
+  // With touch controls the bottom corners belong to the thumbs, so the map
+  // moves up under the damage panel instead.
+  const size = touchActive ? 132 : MAP_SIZE;
+  const x0 = pad;
+  const y0 = touchActive ? 92 : H - size - pad;
+  const view = size / MAP_SCALE;   // world units shown
+
+  panel(x0 - 5, y0 - 5, size + 10, size + 10);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, size, size);
+  ctx.clip();
+  ctx.drawImage(
+    mapBase,
+    (cam.x - view / 2) * MAP_SCALE, (cam.y - view / 2) * MAP_SCALE, view * MAP_SCALE, view * MAP_SCALE,
+    x0, y0, size, size
+  );
+
+  // lights on the map at night
+  if (nf > 0.1) {
+    ctx.globalAlpha = nf * 0.8;
+    ctx.fillStyle = '#ffd79a';
+    for (const s of neonSigns) {
+      const mx = x0 + (s.x - (cam.x - view / 2)) * MAP_SCALE;
+      const my = y0 + (s.y - (cam.y - view / 2)) * MAP_SCALE;
+      ctx.fillRect(mx - 1.5, my - 1.5, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // remote players, so you can find your friend on the map
+  for (const p of NET.peers.values()) {
+    const mx = x0 + (p.x - (cam.x - view / 2)) * MAP_SCALE;
+    const my = y0 + (p.y - (cam.y - view / 2)) * MAP_SCALE;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(mx, my, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // player arrow
+  const px = x0 + (car.x - (cam.x - view / 2)) * MAP_SCALE;
+  const py = y0 + (car.y - (cam.y - view / 2)) * MAP_SCALE;
+  ctx.translate(px, py);
+  ctx.rotate(car.a);
+  ctx.fillStyle = '#ff5c5c';
+  ctx.beginPath();
+  ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x0, y0, size, size);
+
+  // north marker
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '9px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('N', x0 + size / 2, y0 + 3);
+  ctx.restore();
+}
+
+// =====================================================================
+// HUD
+// =====================================================================
+function drawStreaks() {
+  if (!streakBanners.length) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  let y = H * 0.22;
+  for (const b of streakBanners) {
+    const a = Math.min(1, b.age / 0.16, b.life / 0.7);
+    const pop = 1 + 0.16 * Math.max(0, 1 - b.age / 0.2);
+    const size = Math.round((b.mine ? 26 : 20) * pop);
+    ctx.globalAlpha = a;
+    ctx.font = `700 ${size}px ui-monospace, Menlo, monospace`;
+
+    const nameW = ctx.measureText(b.name).width;
+    const labelW = ctx.measureText(b.label).width;
+    const gap = 18;
+    const total = nameW + gap + labelW;
+    const left = W / 2 - total / 2;
+
+    const padW = total + 34;
+    ctx.fillStyle = 'rgba(8,11,18,0.72)';
+    ctx.fillRect(W / 2 - padW / 2, y - size * 0.8, padW, size * 1.6);
+    ctx.strokeStyle = `${b.color}66`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W / 2 - padW / 2 + 0.5, y - size * 0.8 + 0.5, padW - 1, size * 1.6 - 1);
+
+    ctx.fillStyle = b.color;
+    ctx.fillText(b.name, left + nameW / 2, y);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(b.label, left + nameW + gap + labelW / 2, y);
+
+    y += b.mine ? size * 1.9 : size * 1.6;
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+// Compact leaderboard: the running order by kills, top-left under the
+// damage and fps panels. The full table lives in the players panel.
+function drawLeaderboard() {
+  const rows = NET.scores;
+  if (!rows || rows.length < 1) return;
+  const show = rows.slice(0, 5);
+  const w = 148;
+  const lineH = 17;
+  const h = 18 + show.length * lineH;
+  const x = 12;
+  const y = touchActive ? 232 : 88;
+  if (y + h > H - 8) return;                 // no room; the panel still has it
+  panel(x, y, w, h);
+  ctx.save();
+  ctx.font = '600 10px ui-monospace, Menlo, monospace';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(159,176,198,0.85)';
+  ctx.textAlign = 'left';
+  ctx.fillText('LEADERBOARD', x + 8, y + 11);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(111,128,152,0.9)';
+  ctx.fillText('K   D', x + w - 8, y + 11);
+
+  ctx.font = '600 11px ui-monospace, Menlo, monospace';
+  show.forEach((r, i) => {
+    const ry = y + 18 + i * lineH + lineH / 2;
+    const mine = r.id === NET.id;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = mine ? '#dfe8f4' : '#a9b7c9';
+    ctx.fillText(String(i + 1), x + 8, ry);
+    ctx.fillStyle = r.color || '#c8453a';
+    ctx.fillRect(x + 20, ry - 4, 8, 8);
+    ctx.fillStyle = mine ? '#dfe8f4' : '#c3cfdd';
+    const name = (r.name || ('racer' + r.id)).slice(0, 11);
+    ctx.fillText(name, x + 33, ry);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#4bd07a';
+    ctx.fillText(String(r.kills), x + w - 34, ry);
+    if (r.streak >= 2) {
+      ctx.fillStyle = '#ffd23f';
+      ctx.fillText(r.streak + 'x', x + w - 52, ry);
+    }
+    ctx.fillStyle = '#8fa0b5';
+    ctx.fillText(String(r.deaths), x + w - 8, ry);
+  });
+  ctx.restore();
+}
+
+// =====================================================================
+// death screen
+//
+// GTA V style: the world drains to black and white and WASTED lands over it.
+// Drawn last so it covers the HUD as well as the scene.
+// =====================================================================
+function drawDeathScreen() {
+  if (car.wreckTimer <= 0) return;
+  const t = car.wreckTimer;
+  const age = WRECK_TIME - t;
+  // GTA snaps in fast and then holds
+  const fadeIn = Math.min(1, age / 0.25);
+  const fadeOut = Math.min(1, t / 0.5);
+  const a = Math.max(0, Math.min(fadeIn, fadeOut));
+  if (a <= 0) return;
+
+  ctx.save();
+  // "saturation" blend takes the saturation of the source (none) and keeps the
+  // brightness of the scene, which drains the colour without flattening it
+  ctx.globalCompositeOperation = 'saturation';
+  ctx.globalAlpha = a;
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  ctx.save();
+  // crush the brightness, heavier at the edges
+  ctx.globalAlpha = 0.44 * a;
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, W, H);
+  const vig = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.18,
+                                       W / 2, H / 2, Math.max(W, H) * 0.72);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(140,0,0,0.55)');
+  ctx.globalAlpha = a;
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const sans = "'Arial Black', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+  // a short punch outward as it lands
+  const pop = 1 + 0.12 * Math.max(0, 1 - age / 0.16);
+  // Bound it by the width as well as the height. On a short landscape phone the
+  // height term alone makes the word eat the whole screen.
+  const size = Math.round(Math.min(Math.min(W, H) * 0.13, W * 0.085) * pop);
+  ctx.font = '900 ' + size + 'px ' + sans;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = Math.round(size * 0.05) + 'px';
+
+  const y = H / 2;
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillText('WASTED', W / 2 + 4, y + 4);
+  // a red halo behind the white, as the game does
+  ctx.fillStyle = 'rgba(190,26,20,' + (0.75 * a).toFixed(3) + ')';
+  ctx.fillText('WASTED', W / 2 + 1.5, y + 1.5);
+  ctx.fillStyle = 'rgba(242,246,251,' + (0.97 * a).toFixed(3) + ')';
+  ctx.fillText('WASTED', W / 2, y);
+
+  const killer = car.lastHitBy !== null && car.lastHitBy !== undefined
+    ? nameOf(car.lastHitBy) : null;
+  ctx.font = '600 ' + Math.round(size * 0.19) + 'px ' + sans;
+  ctx.fillStyle = 'rgba(226,232,240,' + (0.85 * a).toFixed(3) + ')';
+  ctx.fillText(killer ? 'WASTED BY ' + String(killer).toUpperCase() : 'RESPAWNING\u2026',
+               W / 2, y + size * 0.66);
+  ctx.restore();
+}
+
+// Kill feed: top-right corner, newest at the top.
+function drawKillFeed() {
+  if (!killFeed.length) return;
+  ctx.save();
+  ctx.font = '600 12px ui-monospace, Menlo, monospace';
+  ctx.textBaseline = 'middle';
+  const lineH = 22;
+  // keep clear of the clock, and of the speed panel when touch controls are up
+  let y = touchActive ? 176 : (NET.peers.size ? 96 : 66);
+  for (const k of killFeed) {
+    const alpha = Math.min(1, k.life / 1.5);
+    const right = W - 18;
+    // measure first so the panel can be sized to the text
+    const byW = k.byName ? ctx.measureText(k.byName).width : 0;
+    const victimW = ctx.measureText(k.victimName).width;
+    const markW = 18;
+    const padX = 8;
+    const w = padX * 2 + byW + (k.byName ? markW : 0) + victimW;
+    const x = right - w;
+
+    ctx.globalAlpha = 0.72 * alpha;
+    ctx.fillStyle = '#080b12';
+    ctx.fillRect(x, y - lineH / 2, w, lineH);
+    ctx.globalAlpha = alpha;
+
+    let cx = x + padX;
+    if (k.byName) {
+      ctx.fillStyle = k.byColor;
+      ctx.textAlign = 'left';
+      ctx.fillText(k.byName, cx, y);
+      cx += byW;
+      ctx.fillStyle = '#8fa0b5';
+      ctx.textAlign = 'center';
+      ctx.fillText('\u2715', cx + markW / 2, y);   // a cross
+      cx += markW;
+    } else {
+      ctx.fillStyle = '#8fa0b5';
+      ctx.textAlign = 'left';
+      ctx.fillText('wrecked', cx, y);
+      cx += ctx.measureText('wrecked').width;
+    }
+    ctx.fillStyle = k.victimColor;
+    ctx.textAlign = 'left';
+    ctx.fillText(k.victimName, cx, y);
+    y += lineH + 4;
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD(nf) {
+  // The utility buttons live in the top-right corner on touch, so the clock,
+  // money and speed panels shift left to clear them.
+  const hudInset = touchActive ? 76 : 0;
+  const speed = Math.hypot(car.vx, car.vy);
+  const kmh = Math.round(speed * 0.32);
+
+  ctx.save();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.textBaseline = 'top';
+
+  // ---- speed, bottom right
+  // On touch the bottom-right belongs to the throttle, so the speed and
+  // damage readout moves up under the clock.
+  const bx = W - 132 - hudInset, by = touchActive ? 88 : H - 74;
+  panel(bx - 10, by - 8, 142, 74);
+  ctx.textAlign = 'right';
+  ctx.font = '600 46px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = nf > 0.5 ? '#9fe8ff' : '#f2f6fb';
+  ctx.fillText(String(kmh), W - 34, by);
+  ctx.font = '12px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#9fb0c6';
+  ctx.fillText('km/h', W - 24, by + 30);
+
+  const bw = 118, bh = 7;
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(W - 34 - bw, by + 50, bw, bh);
+  ctx.fillStyle = car.damage > 0.75 ? '#ff4b3e' : car.damage > 0.4 ? '#ffb020' : '#4bd07a';
+  ctx.fillRect(W - 34 - bw, by + 50, bw * (1 - car.damage), bh);
+
+  // ---- money, under the clock
+  {
+    const mw = 108, mh = 26;
+    const mx = W - mw - 12 - hudInset;
+    const my = 62;
+    panel(mx, my, mw, mh);
+    ctx.fillStyle = '#5fae6d';
+    ctx.fillRect(mx + 9, my + 8, 14, 10);
+    ctx.fillStyle = '#d9e8b0';
+    ctx.font = '700 9px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('$', mx + 16, my + 13.5);
+    ctx.fillStyle = '#4bd07a';
+    ctx.font = '600 13px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('$' + car.money, mx + mw - 9, my + mh / 2);
+  }
+
+  // ---- clock, top right
+  panel(W - 92 - hudInset, 10, 82, 42);
+  ctx.textAlign = 'right';
+  ctx.font = '600 20px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#eaf1fa';
+  ctx.fillText(clockText(), W - 20 - hudInset, 16);
+  ctx.font = '11px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(159,176,198,0.9)';
+  ctx.fillText(partOfDay(), W - 20 - hudInset, 38);
+
+  // ---- damage, top left
+  panel(12, 10, 150, 32);
+  ctx.textAlign = 'left';
+  ctx.font = '11px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(159,176,198,0.9)';
+  ctx.fillText('DAMAGE', 20, 16);
+  const dw = 134;
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(20, 32, dw, 7);
+  ctx.fillStyle = car.damage > 0.75 ? '#ff4b3e' : car.damage > 0.4 ? '#ffb020' : '#4bd07a';
+  ctx.fillRect(20, 32, dw * (1 - car.damage), 7);
+
+  // ---- nuke countdown, centre screen, impossible to miss
+  {
+    let soonest = null;
+    for (const n of nukes) if (!soonest || n.t < soonest.t) soonest = n;
+    if (soonest) {
+      const mine = soonest.owner === NET.id;
+      const big = mine ? 'NUKE AWAY' : 'NUKE INCOMING';
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 24px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = 'rgba(8,11,18,0.72)';
+      ctx.fillRect(W / 2 - 150, H * 0.34 - 22, 300, 44);
+      ctx.fillStyle = mine ? '#ffd23f' : '#ff5c5c';
+      ctx.fillText(big, W / 2 - 24, H * 0.34);
+      ctx.fillStyle = '#eaf1fa';
+      ctx.fillText(soonest.t.toFixed(1), W / 2 + 104, H * 0.34);
+      ctx.restore();
+    }
+  }
+
+  // ---- held item, bottom-centre-left so it reads without moving your eyes
+  if (car.item) {
+    const info = ITEM_INFO[car.item];
+    const iw = 92, ih = 34;
+    const ix = W / 2 - iw / 2, iy = touchActive ? H - 118 : H - 54 - ih;
+    panel(ix, iy, iw, ih);
+    ctx.fillStyle = info.color;
+    ctx.fillRect(ix + 8, iy + 9, 16, 16);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(ix + 8, iy + 9, 16, 16);
+    drawItemIcon(ix + 16, iy + 17, 7, car.item);
+    ctx.fillStyle = '#eaf1fa';
+    ctx.font = '600 12px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(info.label, ix + 30, iy + 17);
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = '#8fa0b5';
+    ctx.textAlign = 'center';
+    ctx.fillText(touchActive ? 'press USE' : 'E to use', W / 2, iy + ih + 9);
+  }
+
+  // ---- the arsenal: one row per gun carried, the active one lit up
+  {
+    const guns = car.guns || [];
+    const rowH = 26;
+    const gw = 150;
+    const total = guns.length * rowH;
+    const gx = W / 2 - gw / 2;
+    const gy = (touchActive ? H - 196 : H - 130) - total;
+    panel(gx, gy, gw, total + 4);
+
+    guns.forEach((g, i) => {
+      const w = WEAPONS[g.kind] || WEAPONS.gun;
+      const active = i === car.gunIndex;
+      const ry = gy + 2 + i * rowH;
+      if (active) {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(gx + 2, ry, gw - 4, rowH);
+      }
+      // the slot number doubles as the keyboard shortcut
+      ctx.font = '600 10px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = active ? '#8fa0b5' : '#5c6b80';
+      ctx.fillText(String(i + 1), gx + 8, ry + rowH / 2);
+      ctx.globalAlpha = active ? 1 : 0.55;
+      drawItemIcon(gx + 26, ry + rowH / 2, 7, g.kind);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = active ? '#eaf1fa' : '#9aa8bb';
+      ctx.font = '600 11px ui-monospace, Menlo, monospace';
+      ctx.fillText(w.name, gx + 40, ry + rowH / 2);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = g.ammo <= 3 ? '#ff8a3d' : (active ? '#8fa0b5' : '#5c6b80');
+      ctx.fillText(g.ammo === Infinity ? '\u221E' : String(g.ammo), gx + gw - 10, ry + rowH / 2);
+    });
+
+    if (guns.length > 1) {
+      ctx.textAlign = 'center';
+      ctx.font = '10px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = '#6f8098';
+      ctx.textBaseline = 'top';
+      ctx.fillText(touchActive ? 'SWAP to change' : 'Q to swap', W / 2, gy + total + 9);
+    }
+  }
+
+  // ---- shield timer
+  if (car.shieldTimer > 0) {
+    const sw = 92, sh = 22;
+    const sx = W / 2 - sw / 2, sy = (touchActive ? H - 156 : H - 90) - sh;
+    panel(sx, sy, sw, sh);
+    ctx.fillStyle = '#25e0ff';
+    ctx.font = '600 11px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SHIELD ' + car.shieldTimer.toFixed(1), W / 2, sy + sh / 2);
+  }
+
+  // ---- connection indicator, tucked under the clock
+  if (NET.connected && NET.peers.size) {
+    panel(W - 92 - hudInset, touchActive ? 118 : 56, 82, 26);
+    ctx.textAlign = 'right';
+    ctx.font = '600 12px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = '#4bd07a';
+    ctx.fillText(`${NET.peers.size} online`, W - 20 - hudInset, touchActive ? 124 : 62);
+  }
+
+  // ---- second row on the left: handbrake telltale and the fps meter share
+  // one panel so they cannot overlap when both are showing
+  if (handbrake() || showFps) {
+    panel(12, 48, 150, 32);
+    ctx.textAlign = 'left';
+    ctx.font = '600 12px ui-monospace, Menlo, monospace';
+
+    if (showFps) {
+      ctx.fillStyle = 'rgba(159,176,198,0.9)';
+      ctx.font = '11px ui-monospace, Menlo, monospace';
+      ctx.fillText('FPS', 20, 54);
+      ctx.font = '600 13px ui-monospace, Menlo, monospace';
+      // green when smooth, amber when dropping, red when it is actually bad
+      const col = fpsValue >= 55 ? '#4bd07a' : fpsValue >= 40 ? '#ffb020' : '#ff4b3e';
+      ctx.fillStyle = col;
+      ctx.fillText(String(Math.round(fpsValue)), 42, 52);
+      ctx.font = '11px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = 'rgba(159,176,198,0.75)';
+      ctx.fillText('min ' + Math.round(fpsMin), 86, 54);
+    }
+
+    if (handbrake()) {
+      ctx.fillStyle = '#ffb020';
+      ctx.font = '600 12px ui-monospace, Menlo, monospace';
+      ctx.fillText(showFps ? 'HB' : 'HANDBRAKE', showFps ? 132 : 20, 53);
+    }
+  }
+
+
+  drawPopups();
+  drawFires();
+  ctx.restore();
+  drawNukeFlash();
+  drawStreaks();
+  drawLeaderboard();
+  drawKillFeed();
+  drawMinimap(nf);
+  drawDeathScreen();
+}
+
+// =====================================================================
+// loop
+// =====================================================================
+const STEP_T = 1 / 120;
+let acc = 0, last = performance.now();
+
+// ---- fps meter
+// Measures over a rolling window rather than per-frame, so the readout is
+// stable instead of flickering between values every refresh.
+const FPS_WINDOW = 0.5;         // seconds of history
+let fpsFrames = 0, fpsWindowStart = last, fpsValue = 0, fpsMin = 0;
+let showFps = true;
+
+function updateFps(now) {
+  fpsFrames++;
+  const span = (now - fpsWindowStart) / 1000;
+  if (span < FPS_WINDOW) return;
+  const value = fpsFrames / span;
+  // dip below the running average, or start a fresh minimum every 4s, so a
+  // one-off hitch does not pin the worst frame on screen forever
+  if (value <= fpsValue || now - fpsWindowStart > 4 * FPS_WINDOW) fpsMin = value;
+  fpsValue = value;
+  fpsFrames = 0;
+  fpsWindowStart = now;
+}
+
+function frame(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (!(dt > 0)) dt = 0;
+  else if (dt > 0.25) dt = 0.25;
+
+  updateFps(now);
+
+  acc += dt;
+  while (acc >= STEP_T) { step(STEP_T); acc -= STEP_T; }
+  updateNet(dt);
+  netTick(now);
+
+  const nf = nightF();
+  const speed = Math.hypot(car.vx, car.vy);
+  zoom += (ZOOM_BASE * (1 - Math.min(speed / topSpeedNow(), 1) * 0.18) - zoom) * Math.min(1, dt * 3);
+  updateCamera(dt);
+  updateAudio();
+
+  // keep the peer distance readouts fresh while connected
+  if (NET.peers.size) renderPeers();
+
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-cam.x, -cam.y);
+
+  // --- pass 1: geometry that the time-of-day tint will darken
+  drawGround();
+  drawRubble();
+  drawNukes();
+  drawShadows();
+  drawGroundLights(nf);
+  drawBuildings(nf);
+  drawParked();
+  drawPeds();
+  drawCash();
+  drawBoxes();
+  drawMines();
+  drawPalms();
+  drawSkids();
+  drawRemoteSkids();
+  drawSmoke();
+  drawSparks();
+  drawBullets();
+  drawRemoteCars();
+  drawCar();
+  drawCarEffect(car.x, car.y, { a: car.a, boost: car.boostTimer > 0, shield: car.shieldTimer > 0, item: null });
+  // our own health, right above the car, exactly like everyone else's
+  drawCarTag(car.x, car.y, NET.name || 'you', NET.color, car.damage, { mine: true });
+
+  // --- pass 2: lights, which must not be tinted
+  drawLights(nf);
+  drawBangs();
+
+  ctx.restore();
+
+  drawLighting(nf);
+  drawHUD(nf);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// UI wiring happens last, once every declaration above it exists
+initNetUI();
+initShop();
+initTouchControls();
+
+// small debug surface used by the test suites
+window.__game = {
+  car, cam, buildings, lots, parked, palms, neonSigns, lamps, solids, keys,
+  respawn, step, insideRoad, WORLD, resize,
+  METRICS: { ROAD, BLOCK, STEP, N, WALL, WORLD },
+  dayT, DAY_T,
+  nightF, sunAlt, sunShadow, sceneTint, onRoad,
+  NET, netSkid, updateNet, encodeState, handleRelay, send, connectRelay, onRemoteState,
+  findSpawn, clearOfSolids, killFeed, pushKillFeed, updateKillFeed, drawLeaderboard,
+  rubble, destroySolid, damageSolid, blastNearby, flattenPalms,
+  nukes, armNuke, updateNukes, detonateNuke, BLAST_RADIUS, BLAST_POWER,
+  WEAPONS, isWeapon, fire, shakeAt, resetGuns, giveGun, switchGun, currentGun, dropEmptyGun,
+  drawCarTag, drawDeathScreen, WRECK_TIME, streakBanners, pushStreak, updateStreaks, ITEM_WEIGHTS,
+  peds, cash, popups, killPed, revivePed, updatePeds, pedIndexById, dropCash, drawPeds, drawCash, drawPopups,
+  fires, addFire, updateFires, bulletEnds, drawFires,
+  PED_RESPAWN,
+  drawItemIcon,
+  get nukeFlash() { return nukeFlash; },
+  set nukeFlash(v) { nukeFlash = v; },
+  loadProfile, saveProfile, colourForName, hslToHex, WORLD_SEED,
+  toggleFullscreen, fullscreenSupported, fullscreenActive,
+  UPGRADES, upgradeCost, buyUpgrade, renderShop, toggleShop, saveProgress, loadProgress, MAX_LEVEL,
+  topSpeedNow, accelNow, gripNow, boostTimeNow, gunDamageNow, damageScaleNow,
+  boxes, mines, ITEMS, ITEM_INFO, useItem, dropMine, updateBoxes, updateMines, randomItem,
+  bullets, sparks, bangs, fire, explode, wreckCar, applyDamage, updateBullets, damageSolid,
+  get firing() { return firing; },
+  set firing(v) { firing = v; },
+  get fireCooldown() { return fireCooldown; },
+  set fireCooldown(v) { fireCooldown = v; },
+  get shakeAmount() { return shakeAmount; },
+  set shakeAmount(v) { shakeAmount = Number.isFinite(v) ? v : 0; },
+  get netTick() { return netTick; },
+  get fps() { return fpsValue; },
+  get fpsMin() { return fpsMin; },
+  get showFps() { return showFps; },
+  set showFps(v) { showFps = !!v; },
+};
+</script>
+</body>
+</html>

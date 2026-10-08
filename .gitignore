@@ -1,0 +1,6 @@
+.idea
+
+# test artefacts
+tests/chrome-*/
+tests/.game.js
+tests/.*.html
