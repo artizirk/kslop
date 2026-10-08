@@ -4,4 +4,3 @@
 tests/chrome-*/
 tests/.game.js
 tests/.*.html
-tests/.audit-*.pem

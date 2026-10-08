@@ -63,8 +63,8 @@ const wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0
     if (await healthy()) {
       console.log('using the relay already listening on ' + PORT);
     } else {
-      server = spawn(process.execPath, [path.join(DIR, '..', 'server.js')], {
-        env: Object.assign({}, process.env, { PORT: String(PORT), SEED: '20251008' }),
+      server = spawn('bun', [path.join(DIR, '..', 'server.ts')], {
+        env: Object.assign({}, process.env, { PORT: String(PORT), SEED: '20251008', HOST: '127.0.0.1' }),
         stdio: 'ignore',
       });
       let up = false;

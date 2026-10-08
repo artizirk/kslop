@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * Security audit of server.js.
+ * Security audit of server.ts (the Bun relay).
  *
  * Every finding is demonstrated against a real running instance rather than
  * inferred from reading the source. Each probe gets a freshly started server,
@@ -46,8 +46,8 @@ async function startServer(opts) {
   const port = nextPort++;
   const env = Object.assign({}, process.env, { PORT: String(port), SEED: '20251008', TOKEN: o.token || TOKEN });
   if (o.bindAll) env.HOST = '0.0.0.0'; else env.HOST = HOST;
-  if (o.tls) { env.TLS_KEY = TLS_KEY_FILE; env.TLS_CERT = TLS_CERT_FILE; }
-  const proc = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+  if (o.env) Object.assign(env, o.env);
+  const proc = spawn('bun', [path.join(__dirname, '..', 'server.ts')], {
     env, stdio: ['ignore', 'ignore', 'pipe'],
   });
   let stderr = '';
@@ -148,6 +148,25 @@ function wsOpen(port, timeoutMs) {
   });
 }
 
+// A raw handshake that reports the status line, so a rejected upgrade
+// (426/429/503) can be told apart from a 101.
+function wsHandshake(port, extraHeaders, host) {
+  return new Promise((resolve) => {
+    const sock = net.connect(port, host || HOST);
+    let buf = '';
+    let done = false;
+    const finish = (status) => { if (!done) { done = true; resolve({ socket: sock, status }); } };
+    sock.on('connect', () => {
+      sock.write('GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+        'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n' +
+        (extraHeaders || '') + '\r\n');
+    });
+    sock.on('data', (d) => { buf += d.toString('latin1'); if (buf.includes('\r\n\r\n')) finish((buf.split('\r\n')[0] || '').trim()); });
+    sock.on('error', () => finish('error'));
+    setTimeout(() => finish((buf.split('\r\n')[0] || 'timeout').trim()), 1200);
+  });
+}
+
 function frame(text, opts) {
   const o = opts || {};
   const masked = o.masked !== false;
@@ -168,23 +187,10 @@ function frame(text, opts) {
   return Buffer.concat([header, mask, body]);
 }
 
-// a self-signed cert, so the TLS probe can actually complete a handshake
-const TLS_KEY_FILE = path.join(__dirname, '.audit-key.pem');
-const TLS_CERT_FILE = path.join(__dirname, '.audit-cert.pem');
-function makeCert() {
-  if (fs.existsSync(TLS_KEY_FILE) && fs.existsSync(TLS_CERT_FILE)) return true;
-  try {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-      '-keyout', TLS_KEY_FILE, '-out', TLS_CERT_FILE, '-days', '1', '-subj', '/CN=localhost'],
-      { stdio: 'ignore' });
-    return true;
-  } catch (e) { return false; }
-}
 
 // ---- the audit ----------------------------------------------------------
 (async () => {
-  console.log('auditing server.js, one clean instance per probe\n');
-  const haveCert = makeCert();
+  console.log('auditing server.ts (bun), one clean instance per probe\n');
 
   console.log('== malformed HTTP (crash resistance) ==');
   await probe('a bare "%" in the path', 'critical', async (s) => ({ survived: true, detail: rawHead(await rawGet(s.port, '/%')) }));
@@ -203,7 +209,7 @@ function makeCert() {
   console.log('\n== path traversal ==');
   for (const p of ['/../../etc/passwd', '/%2e%2e%2f%2e%2e%2fetc%2fpasswd', '/..%2f..%2fetc%2fpasswd',
                    '/....//....//etc/passwd', '/%2e%2e/%2e%2e/etc/passwd', '/..%252f..%252fetc%252fpasswd',
-                   '/%2e%2e%2fserver.js', '/..%2fserver.js']) {
+                   '/%2e%2e%2fserver.ts', '/..%2fserver.ts']) {
     await probe('traversal blocked: ' + p, 'critical', async (s) => {
       const r = await rawGet(s.port, p);
       const leaked = /root:.*:0:0:/.test(r);
@@ -211,14 +217,34 @@ function makeCert() {
     });
   }
   await probe("the folder's own source is not public", 'medium', async (s) => {
-    const srv = await rawGet(s.port, '/server.js');
+    const srv = await rawGet(s.port, '/server.ts');
     const docs = await rawGet(s.port, '/README.md');
     const dot = await rawGet(s.port, '/.gitignore');
     const exposed = [];
-    if (/require\(/.test(srv)) exposed.push('server.js');
+    if (/Bun\.serve|RELOAD_TOKEN/.test(srv)) exposed.push('server.ts');
     if (/^# /m.test(docs)) exposed.push('README.md');
     if (/\.idea/.test(dot)) exposed.push('.gitignore');
     return { survived: exposed.length === 0, detail: exposed.length ? 'served: ' + exposed.join(', ') : 'nothing outside the page' };
+  });
+
+  console.log('\n== only the page is reachable ==');
+  await probe('a random file next to the page is not served', 'high', async (s) => {
+    const marker = 'AUDIT_PRIVATE_MARKER_9f3c';
+    const file = path.join(__dirname, 'audit-probe.txt');
+    fs.writeFileSync(file, marker);
+    try {
+      const r = await rawGet(s.port, '/tests/audit-probe.txt');
+      const leaked = r.includes(marker);
+      const isPage = /<script>/.test(r);
+      return { survived: !leaked && isPage, detail: leaked ? 'served the file' : 'returned the page' };
+    } finally {
+      try { fs.unlinkSync(file); } catch (e) { /* gone */ }
+    }
+  });
+  await probe('the relay source is not served', 'high', async (s) => {
+    const r = await rawGet(s.port, '/server.ts');
+    const leaked = /Bun\.serve|RELOAD_TOKEN|TRUSTED_PROXY/.test(r);
+    return { survived: !leaked, detail: leaked ? 'served the source' : 'returned the page' };
   });
 
   console.log('\n== the reload endpoint ==');
@@ -299,6 +325,25 @@ function makeCert() {
     return { survived: true, detail: 'single frames are capped at 8 KB' };
   });
 
+  console.log('\n== the handshake ==');
+  await probe('an old websocket version is refused', 'low', async (s) => {
+    const r = await new Promise((resolve) => {
+      const sock = net.connect(s.port, HOST);
+      let buf = '';
+      sock.on('connect', () => sock.write('GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 8\r\n\r\n'));
+      sock.on('data', (d) => { buf += d.toString('latin1'); });
+      setTimeout(() => { resolve((buf.split('\r\n')[0] || 'timeout').trim()); try { sock.destroy(); } catch (e) {} }, 500);
+    });
+    return { survived: /426/.test(r), detail: r };
+  });
+  await probe('a reserved opcode fails the connection', 'low', async (s) => {
+    const sock = await wsConnect(s.port);
+    let closed = false; sock.on('close', () => { closed = true; });
+    sock.write(frame('', { opcode: 0x3 }));
+    await sleep(300); sock.destroy();
+    return { survived: closed, detail: closed ? '' : 'the connection stayed open' };
+  });
+
   console.log('\n== resource limits ==');
   await probe('one client can flood the relay', 'high', async (s) => {
     const f = await wsOpen(s.port);
@@ -327,6 +372,31 @@ function makeCert() {
     conns.forEach((c) => { try { c.close(); } catch (e) {} });
     return { survived: held <= 4, detail: held + ' of 10 connections from one address were accepted' };
   });
+
+  await probe('a trusted proxy\'s forwarded header keys the address limit', 'high', async (s) => {
+    const same = [];
+    for (let i = 0; i < 5; i++) same.push(await wsHandshake(s.port, 'X-Real-IP: 198.51.100.7\r\n'));
+    const accepted = same.filter((x) => /101/.test(x.status)).length;
+    const other = await wsHandshake(s.port, 'X-Real-IP: 198.51.100.8\r\n');
+    for (const x of same) { try { x.socket.destroy(); } catch (e) {} }
+    try { other.socket.destroy(); } catch (e) {}
+    return { survived: accepted === 4 && /101/.test(other.status),
+      detail: accepted + '/5 from one forwarded address accepted; another forwarded address -> ' + other.status };
+  });
+  await probe('an untrusted peer cannot forge its address', 'high', async (s) => {
+    if (!LAN_IP) return { survived: true, detail: 'no non-loopback address to test from' };
+    // Every connection uses a different X-Real-IP; if the header were trusted
+    // they would each get their own budget. Because this peer is not trusted,
+    // they share one address and the fifth is refused.
+    const conns = [];
+    for (let i = 0; i < 5; i++) {
+      conns.push(await wsHandshake(s.port, 'X-Real-IP: 203.0.113.' + (10 + i) + '\r\n', LAN_IP));
+    }
+    const accepted = conns.filter((x) => /101/.test(x.status)).length;
+    for (const x of conns) { try { x.socket.destroy(); } catch (e) {} }
+    return { survived: accepted === 4, detail: accepted + '/5 accepted (want 4: the header must be ignored)' };
+  }, { bindAll: true, host: LAN_IP });
+
   await probe('a recorded hit beats a forged claim', 'info', async (s) => {
     // Attach the message handler in the same tick the socket is created: the
     // relay sends `welcome` (which carries the id) before an `open`-then-listen
@@ -379,16 +449,9 @@ function makeCert() {
   });
 
   console.log('\n== transport ==');
-  if (haveCert) {
-    await probe('the relay can serve over TLS', 'medium', async (s) => {
-      const r = await get(s.port, '/health', HOST, true);
-      return { survived: r.status === 200, detail: 'https/wss available via TLS_KEY and TLS_CERT' };
-    }, { tls: true });
-  } else {
-    record('the relay can serve over TLS', true, 'info', 'openssl unavailable; skipping');
-  }
-  await probe('plain HTTP is the default (documented)', 'info', async (s) => {
-    return { survived: true, detail: 'set TLS_KEY/TLS_CERT for wss, or put the relay behind a proxy' };
+  await probe('the relay speaks plain HTTP', 'info', async (s) => {
+    const r = await get(s.port, '/health');
+    return { survived: r.status === 200, detail: 'terminate TLS at the proxy, or run on a trusted network' };
   });
 
   console.log('\n== summary ==');
@@ -397,6 +460,5 @@ function makeCert() {
   vulns.sort((a, b) => order[a.severity] - order[b.severity]);
   for (const f of vulns) console.log('  [' + f.severity.toUpperCase() + '] ' + f.name + (f.detail ? '\n         ' + f.detail : ''));
   console.log('\n' + vulns.length + ' issue(s), ' + findings.length + ' probes');
-  try { fs.unlinkSync(TLS_KEY_FILE); fs.unlinkSync(TLS_CERT_FILE); } catch (e) {}
   process.exit(vulns.length ? 1 : 0);
 })().catch((e) => { console.error('audit could not run: ' + e.message); process.exit(2); });

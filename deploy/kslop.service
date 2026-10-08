@@ -1,0 +1,94 @@
+# Leonida game relay — hardened systemd unit (Bun).
+#
+# Not installed by the project; copy it where you want it:
+#   sudo install -d /opt/kslop /etc/kslop
+#   sudo install -m 0644 deploy/kslop.service /etc/systemd/system/kslop.service
+#   sudo install -m 0644 deploy/kslop.env.example /etc/kslop/kslop.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now kslop
+#
+# It assumes the game (index.html + server.ts) lives in /opt/kslop, read-only,
+# and runs as a dynamic, throwaway user with no capabilities. nginx is expected
+# to sit in front — in another container — so the relay listens on 0.0.0.0:8080
+# and trusts forwarded client addresses only from the proxy (TRUSTED_PROXY in
+# /etc/kslop/kslop.env). See deploy/README.md.
+
+[Unit]
+Description=Leonida game relay
+Documentation=file:///opt/kslop/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/kslop
+ExecStart=/usr/bin/bun /opt/kslop/server.ts
+
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+
+# Configuration and secrets (PORT, HOST, SEED, TOKEN, TRUSTED_PROXY, PER_IP_MAX).
+# The '-' means the unit still starts if the file is absent; PORT/HOST have
+# working defaults here.
+EnvironmentFile=-/etc/kslop/kslop.env
+Environment=PORT=8080
+Environment=HOST=0.0.0.0
+
+# ---- privileges ---------------------------------------------------------
+# No capabilities at all: the relay binds an unprivileged port and needs none.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# ---- filesystem ---------------------------------------------------------
+# It only reads its own directory and writes nothing, so lock the whole
+# filesystem down.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+UMask=0077
+
+# ---- kernel / process surface ------------------------------------------
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Bun's JIT (like any JS engine) needs writable-executable memory, so
+# MemoryDenyWriteExecute is deliberately NOT set: it would crash the runtime.
+# If Bun ever dies with SIGSYS under the syscall filter, relax this to
+# "@system-service @process" or remove it.
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+# ---- network ------------------------------------------------------------
+# The relay only needs to talk to the local proxy. Allowing just loopback and
+# the docker default networks means the public internet cannot reach it
+# directly, even if the port is exposed by mistake. EDIT the last line to match
+# the network your nginx container reaches the host on.
+IPAddressDeny=any
+IPAddressAllow=localhost 172.16.0.0/12
+
+# ---- resource caps ------------------------------------------------------
+MemoryMax=512M
+TasksMax=64
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kslop
+
+[Install]
+WantedBy=multi-user.target

@@ -7,19 +7,23 @@ no dependencies, no assets — every texture is drawn with canvas paths.
 
 ## Running it
 
-    node server.js          # port 80
-    PORT=8080 node server.js
+    bun server.ts                 # port 8080, all interfaces
+    PORT=9000 bun server.ts
+    HOST=127.0.0.1 bun server.ts  # loopback only
+    SEED=123 bun server.ts        # a fixed city
 
-Port 80 needs root on Linux and macOS; `PORT=8080` avoids that. Then open the
-address it prints. Everyone who opens that address is in the same game — there
-are no room codes and no lobbies. To play with someone else, they open the same
-address on the same network.
+The relay runs on [Bun](https://bun.sh) and is itself dependency-free — no
+`package.json`, no `node_modules`; Bun executes the TypeScript directly. Then
+open the address it prints. Everyone who opens that address is in the same game
+— there are no room codes and no lobbies. To play with someone else, they open
+the same address on the same network.
 
 If you only want to drive around on your own, opening `index.html` directly works
 too — you just get no other players.
 
 Add `?audio=0` to the URL for a silent tab — no `AudioContext` is ever built. The
 automated browser tests append it so headless Chrome never plays anything.
+
 ## Controls
 
 | | |
@@ -88,43 +92,47 @@ style, then you respawn somewhere random that is not a corner.
 
 ## The relay
 
-`server.js` serves the page and forwards messages between players over a
-WebSocket. It has no dependencies either — the WebSocket frame handling is about
-a hundred lines. It keeps the roster, the scoreboard and the world seed, and it
+`server.ts` serves the page and forwards messages between players. It uses Bun's
+built-in WebSocket server, so there is no framing code to get wrong — masking,
+fragmentation, control frames and flow control are the runtime's job — and no
+dependencies. It keeps the roster, the scoreboard and the world seed, and it
 tells every client to reload when `index.html` changes, so an edit is live
 everywhere without anyone refreshing.
 
-    SEED=123 node server.js     # a fixed city, useful when testing
+    SEED=123 bun server.ts     # a fixed city, useful when testing
 
-Pressing `r` + Enter in the server console forces a refresh. So does
-`GET /reload`, but that now needs the token the server prints at startup, since
-an unauthenticated reload would let anyone on the network restart everyone's
-game on a loop:
+There is no file server: the game is one self-contained `index.html`, so every
+path returns that page. The only other routes are `GET /health` (counts, and the
+roster to the operator) and `GET /reload`, which forces every client to refresh
+and therefore needs the token the server prints at startup:
 
     curl "http://localhost:8080/reload?token=<printed-token>"
 
+Pressing `r` + Enter on a terminal does the same without a token.
+
 ### Security
 
-The relay is written to be safe to expose. Each connection gets a message-rate
-budget (90/s sustained) and a blow-up carve-out, one address may hold at most 4
-connections, and the total is capped. Malformed requests and malformed WebSocket
-frames are rejected without touching the process; earlier, a single `GET /%`
-could take the server down. Only `index.html` and image files in the folder are
-served — the relay's source, the tests and dotfiles stay private even though they
-sit in the same directory.
+Each connection gets a message-rate budget (90/s sustained); one address may hold
+at most 4 connections (`PER_IP_MAX`), and the total is capped at 16. Behind a
+proxy in another container every request looks like the proxy, so set
+`TRUSTED_PROXY` to the proxy's address or subnet — the per-address limit and
+`/health` then see the real client instead:
 
-Traffic is plain HTTP by default. Point `TLS_KEY` and `TLS_CERT` at a certificate
-to serve HTTPS/WSS directly, or put the relay behind a proxy:
+    TRUSTED_PROXY=172.18.0.4 bun server.ts
+    TRUSTED_PROXY=172.16.0.0/12 bun server.ts
 
-    TLS_KEY=key.pem TLS_CERT=cert.pem node server.js
+Only a peer in `TRUSTED_PROXY` (or loopback) may set `X-Real-IP` /
+`X-Forwarded-For`, so a direct client cannot claim someone else's address.
+
+The relay speaks plain HTTP; terminate TLS at the proxy (see
+[`deploy/`](deploy/README.md)), which is also where the sample systemd unit
+lives. `TOKEN` overrides the generated reload token.
 
 Kill attribution is *best-effort*, not verified: each client simulates its own
 car and blast damage is applied on the victim's machine, so a modified client can
 still claim a kill it did not earn. The relay prefers the hit it actually
 forwarded over anything a client claims, but it cannot make a client-authoritative
 game tamper-proof.
-
-`TOKEN` overrides the generated reload token.
 
 ## Tests
 
@@ -133,14 +141,15 @@ game tamper-proof.
 Sixteen game suites, roughly 450 assertions, plus `tests/audit.js`. They run the
 real page: the node suites stub the DOM and canvas and exercise the logic, and
 the browser suites drive real Chrome over the DevTools protocol. The runner
-extracts the script from `index.html` and starts a relay on 8099 with a fixed
-seed. See [tests/README.md](tests/README.md) for what each suite covers.
+extracts the script from `index.html` and starts the relay (`server.ts`, with
+`bun`) on 8099 with a fixed seed, so Bun needs to be on your `PATH`. See
+[tests/README.md](tests/README.md) for what each suite covers.
 
 `tests/audit.js` is a security audit rather than a game test: each probe starts a
 throwaway relay and attacks it — malformed URLs, path traversal, unmasked and
-fragmented frames, message floods, connection exhaustion, forged kills, a
-cross-origin reload — then reports which of them the server survives. Run it on
-its own to see the findings:
+fragmented frames, message floods, connection exhaustion, address forgery,
+forged kills, a cross-origin reload — then reports which of them the server
+survives. Run it on its own to see the findings:
 
     node tests/audit.js
 
@@ -149,7 +158,8 @@ Screenshots from the browser suites land in `tests/shots/`.
 ## Layout
 
     index.html      the whole game
-    server.js       static files + the WebSocket relay
+    server.ts       the page + the WebSocket relay (Bun, no dependencies)
+    deploy/         a sample systemd unit and proxy notes
     tests/          the suites, the runner and the screenshots
 
 The game is one `<script>` block, ordered from the bottom up: helpers, world
