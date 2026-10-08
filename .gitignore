@@ -1,5 +1,8 @@
 .idea
 
+# dev-only type definitions (the relay itself needs nothing installed)
+node_modules
+
 # test artefacts
 tests/chrome-*/
 tests/.game.js

@@ -1,0 +1,14 @@
+{
+  "name": "leonida",
+  "private": true,
+  "//": "Dev-only: the relay itself runs on `bun server.ts` with no dependencies. These packages exist so the editor and `bun run typecheck` can see Bun/Node globals.",
+  "scripts": {
+    "start": "bun server.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "node tests/run-all.js",
+    "audit": "node tests/audit.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

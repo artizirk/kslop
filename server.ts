@@ -18,8 +18,8 @@
  */
 
 // ---------------------------------------------------------------------------
-// Minimal Bun typings. Declared here so the tree needs no @types/bun — the
-// project stays dependency-free. If you later add @types/bun, delete this.
+// Per-connection data we hang off each socket. The Bun WebSocket types come
+// from @types/bun (a dev-only dependency; nothing is needed at runtime).
 // ---------------------------------------------------------------------------
 interface WsData {
   id: number;
@@ -31,42 +31,12 @@ interface WsData {
   strikes: number;
   lastHitBy: number | null;
 }
-interface Ws {
-  data: WsData;
-  send(data: string): number;
-  close(code?: number, reason?: string): void;
-  readonly remoteAddress: string;
-}
-interface Address {
-  address: string;
-  family: string;
-  port: number;
-}
-interface Serve {
-  readonly port: number;
-  readonly hostname: string;
-  upgrade(req: Request, opts?: { data?: WsData }): boolean;
-  requestIP(req: Request): Address | null;
-  stop(): void;
-}
-interface ServeOptions {
-  port: number;
-  hostname: string;
-  fetch(req: Request, server: Serve): Response | undefined;
-  websocket: {
-    maxPayloadLength?: number;
-    idleTimeout?: number;
-    open?(ws: Ws): void;
-    message?(ws: Ws, message: string | Uint8Array): void;
-    close?(ws: Ws, code: number, reason: string): void;
-    drain?(ws: Ws): void;
-  };
-}
-declare const Bun: { serve(opts: ServeOptions): Serve };
+type Ws = ServerWebSocket<WsData>;
 
 import { readFileSync, statSync, watch } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import type { Server, ServerWebSocket } from 'bun';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -368,7 +338,7 @@ function handleMessage(ws: Ws, msg: any): void {
       : (Number.isFinite(claimed) && claimed !== conn.id && players.has(claimed) ? claimed : null);
     const killer = byId !== null ? players.get(byId) : null;
     let shout: any = null;
-    if (killer && byId !== conn.id) {
+    if (killer && byId !== null && byId !== conn.id) {
       const ks = scoreFor(byId);
       ks.kills++;
       ks.streak++;
@@ -489,7 +459,7 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(A, B);
 }
 
-function isOperator(req: Request, peer: string): boolean {
+function isOperator(peer: string): boolean {
   // The operator conveniences are gated on the raw peer, never on a forwarded
   // header a proxy might pass through.
   return isLoopbackAddress(normalizeAddress(peer));
@@ -501,7 +471,7 @@ const json = (body: unknown, status = 200): Response =>
     headers: { 'content-type': 'application/json', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' },
   });
 
-function handleRequest(req: Request, server: Serve): Response | undefined {
+function handleRequest(req: Request, server: Server<WsData>): Response | undefined {
   let url: URL;
   try { url = new URL(req.url); } catch { return new Response('bad request', { status: 400 }); }
 
@@ -510,7 +480,7 @@ function handleRequest(req: Request, server: Serve): Response | undefined {
 
   if (url.pathname === '/health') {
     const out: any = { ok: true, players: players.size, build: BUILD, seed: WORLD_SEED };
-    if (isOperator(req, peer) || hasToken(req, url)) out.list = roster();
+    if (isOperator(peer) || hasToken(req, url)) out.list = roster();
     return json(out);
   }
 
@@ -558,9 +528,9 @@ try {
 // ---------------------------------------------------------------------------
 // Serve
 // ---------------------------------------------------------------------------
-let server: Serve;
+let server: Server<WsData>;
 try {
-  server = Bun.serve({
+  server = Bun.serve<WsData>({
     port: PORT,
     hostname: HOST,
     fetch: handleRequest,
