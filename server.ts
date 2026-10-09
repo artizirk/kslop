@@ -51,6 +51,14 @@ const RATE_PER_SEC = 90;   // a client sends ~20 state packets a second
 const RATE_BURST = 180;
 const MAX_PLAYERS = 16;
 const PER_IP_MAX = Math.max(1, Number(process.env.PER_IP_MAX) || 4);
+// New WebSocket connections per second per address, so a connect/disconnect
+// loop cannot turn every cycle into a fan-out to everyone else. The concurrent
+// cap above does not stop churn, because a close frees its slot immediately.
+const CONN_RATE_PER_SEC = Math.max(1, Number(process.env.CONN_RATE_PER_SEC) || 5);
+const CONN_RATE_BURST = Math.max(1, Number(process.env.CONN_RATE_BURST) || 20);
+// Bytes we will queue to one client before dropping it. Bun's default is 16 MiB
+// and it does not close on its own.
+const BACKPRESSURE_LIMIT = Math.max(4 * 1024, Number(process.env.BACKPRESSURE_LIMIT) || 256 * 1024);
 const RELOAD_WINDOW_MS = 2000;
 
 // Addresses allowed to name the real client in X-Real-IP / X-Forwarded-For.
@@ -154,6 +162,29 @@ function releaseIp(ip: string): void {
   if (n <= 0) perIp.delete(ip); else perIp.set(ip, n);
 }
 
+// A second, slower bucket for NEW connections, keyed by the same address. It is
+// what actually stops connection churn: a close releases the concurrent slot
+// instantly, but the bucket refills at CONN_RATE_PER_SEC.
+const connRate = new Map<string, { tokens: number; at: number }>();
+function allowConnect(ip: string): boolean {
+  const now = Date.now();
+  let b = connRate.get(ip);
+  if (!b) { b = { tokens: CONN_RATE_BURST, at: now }; connRate.set(ip, b); }
+  b.tokens = Math.min(CONN_RATE_BURST, b.tokens + (now - b.at) / 1000 * CONN_RATE_PER_SEC);
+  b.at = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+// Drop buckets that have refilled and gone quiet, so the map tracks active
+// addresses rather than every address ever seen.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, b] of connRate) {
+    if (b.tokens >= CONN_RATE_BURST && now - b.at > 60000) connRate.delete(ip);
+  }
+}, 60000);
+
 // ---------------------------------------------------------------------------
 // Colour per nickname (FNV-1a), so everyone is visibly different
 // ---------------------------------------------------------------------------
@@ -245,6 +276,18 @@ function broadcast(obj: unknown, exceptId?: number): void {
   }
 }
 
+// Scores are a full snapshot and change on kills and departures, so batch them
+// instead of fanning one out per event — otherwise a connect/kill loop floods
+// every player. Roster and peer-left stay immediate so joins/leaves feel right.
+let scoresTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleScores(): void {
+  if (scoresTimer) return;
+  scoresTimer = setTimeout(() => {
+    scoresTimer = null;
+    broadcast({ t: 'scores', scores: scoreboard() });
+  }, 250);
+}
+
 let lastReload = 0;
 
 function reloadAll(reason: string): void {
@@ -259,7 +302,7 @@ function dropPlayer(id: number): void {
   players.delete(id);
   scores.delete(id);
   broadcast({ t: 'peer-left', id });
-  broadcast({ t: 'scores', scores: scoreboard() });
+  scheduleScores();
 }
 
 // ---------------------------------------------------------------------------
@@ -361,7 +404,7 @@ function handleMessage(ws: Ws, msg: any): void {
       x: Number.isFinite(msg.x) ? Math.round(msg.x) : 0,
       y: Number.isFinite(msg.y) ? Math.round(msg.y) : 0,
     });
-    broadcast({ t: 'scores', scores: scoreboard() });
+    scheduleScores();
     return;
   }
 
@@ -495,8 +538,12 @@ function handleRequest(req: Request, server: Server<WsData>): Response | undefin
 
   // Everything else that is not a WebSocket upgrade gets the page.
   const ip = clientAddress(peer, req.headers);
-  if (players.size >= MAX_PLAYERS) return new Response('the game is full', { status: 503 });
-  if ((perIp.get(ip) || 0) >= PER_IP_MAX) return new Response('too many connections from this address', { status: 429 });
+  const isUpgrade = (req.headers.get('upgrade') || '').toLowerCase() === 'websocket';
+  if (isUpgrade) {
+    if (players.size >= MAX_PLAYERS) return new Response('the game is full', { status: 503 });
+    if ((perIp.get(ip) || 0) >= PER_IP_MAX) return new Response('too many connections from this address', { status: 429 });
+    if (!allowConnect(ip)) return new Response('too many connections, slow down', { status: 429 });
+  }
 
   const data: WsData = {
     id: 0, name: '', color: '', ip,
@@ -537,15 +584,22 @@ try {
     websocket: {
       maxPayloadLength: 8 * 1024,   // state packets are ~120 bytes; be strict
       idleTimeout: 120,             // clients send state ~20Hz, so never idle
+      // A client that stops reading must not make us buffer without bound.
+      // Bun's default queue is 16 MiB per socket and it will NOT close on its
+      // own; cap it low and drop the socket when it is hit.
+      backpressureLimit: BACKPRESSURE_LIMIT,
+      closeOnBackpressureLimit: true,
       open(ws) {
         const d = ws.data;
         d.id = nextId++;
         d.name = 'racer' + d.id;
         d.color = colourForName(d.name);
         players.set(d.id, { ws, name: d.name, color: d.color, joined: Date.now() });
+        // The newcomer's welcome carries the current scores; everyone else gets
+        // a coalesced refresh so the leaderboard picks up the new row.
         jsonSend(ws, { t: 'welcome', id: d.id, roster: roster(), scores: scoreboard(), build: BUILD, seed: WORLD_SEED });
         broadcast({ t: 'peer-joined', id: d.id, roster: roster() }, d.id);
-        broadcast({ t: 'scores', scores: scoreboard() }, d.id);
+        scheduleScores();
         console.log(`  + player ${d.id} joined (${players.size} online)`);
       },
       message(ws, message) {

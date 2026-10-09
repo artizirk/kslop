@@ -373,6 +373,36 @@ function frame(text, opts) {
     return { survived: held <= 4, detail: held + ' of 10 connections from one address were accepted' };
   });
 
+  // A connect/close loop must not turn every cycle into a fan-out to everyone.
+  // (Backpressure has no automated probe here: the relay's forwarded messages
+  // are small and loopback's kernel buffers are multi-megabyte, so a slow
+  // reader cannot be pushed to the limit within a sensible test runtime.)
+  await probe('a connect/disconnect loop is throttled', 'high', async (s) => {
+    const obs = await wsOpen(s.port);
+    let msgs = 0;
+    obs.on('message', () => { msgs += 1; });
+    await sleep(200);
+    msgs = 0;
+    const t0 = Date.now();
+    let opened = 0;
+    let rejected = 0;
+    while (Date.now() - t0 < 2000) {
+      try {
+        const a = await wsOpen(s.port, 400);
+        opened += 1;
+        try { a.close(); } catch (e) { /* already gone */ }
+      } catch (e) {
+        rejected += 1;
+      }
+    }
+    await sleep(400);
+    try { obs.close(); } catch (e) { /* already gone */ }
+    return {
+      survived: rejected > 0 && msgs < 2000,
+      detail: opened + ' opened, ' + rejected + ' refused, observer got ' + msgs + ' messages',
+    };
+  });
+
   await probe('a trusted proxy\'s forwarded header keys the address limit', 'high', async (s) => {
     const same = [];
     for (let i = 0; i < 5; i++) same.push(await wsHandshake(s.port, 'X-Real-IP: 198.51.100.7\r\n'));

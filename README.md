@@ -113,8 +113,13 @@ Pressing `r` + Enter on a terminal does the same without a token.
 ### Security
 
 Each connection gets a message-rate budget (90/s sustained); one address may hold
-at most 4 connections (`PER_IP_MAX`), and the total is capped at 16. Behind a
-proxy in another container every request looks like the proxy, so set
+at most 4 connections (`PER_IP_MAX`), and the total is capped at 16. New
+connections are also rate-limited per address (`CONN_RATE_PER_SEC`, default 5/s
+with a burst of 20) — a close frees its slot instantly, so without that a
+connect/disconnect loop turns every cycle into a fan-out to every player. A
+client that stops reading is dropped once its send queue passes
+`BACKPRESSURE_LIMIT` (256 KiB; Bun's default is 16 MiB and it never closes).
+Behind a proxy in another container every request looks like the proxy, so set
 `TRUSTED_PROXY` to the proxy's address or subnet — the per-address limit and
 `/health` then see the real client instead:
 
